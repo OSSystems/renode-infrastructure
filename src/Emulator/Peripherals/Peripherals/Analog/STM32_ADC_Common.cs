@@ -648,7 +648,8 @@ namespace Antmicro.Renode.Peripherals.Analog
                 .WithValueField(16, 2, name: "CKMODE") // no actual logic, since we do not handle clock in this model
                 .WithTaggedFlag("VREFEN", 22)
                 .WithTaggedFlag("TSEN", 23)
-                .WithReservedBits(25, 7);
+                .WithTaggedFlag("LFMEN", 25)
+                .WithReservedBits(26, 6);
 
             if(hasPrescaler)
             {
