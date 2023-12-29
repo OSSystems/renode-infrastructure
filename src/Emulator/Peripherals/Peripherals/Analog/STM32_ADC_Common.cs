@@ -442,7 +442,7 @@ namespace Antmicro.Renode.Peripherals.Analog
                 .WithEnumField<DoubleWordRegister, ScanDirection>(hasChannelSequence ? 4 : 2, 1, out scanDirection, name: "SCANDIR")
                 .WithEnumField<DoubleWordRegister, Resolution>(hasChannelSequence ? 2 : 3, 2, out resolution, name: "RES")
                 .WithEnumField<DoubleWordRegister, Align>(5, 1, out align, name: "ALIGN")
-                .WithTag("EXTSEL", 6, 2)
+                .WithTag("EXTSEL", 6, 3)
                 .WithReservedBits(9, 1)
                 .WithValueField(10, 2, writeCallback: (_, val) =>
                     {
