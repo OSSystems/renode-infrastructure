@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2010-2026 Antmicro
+// Copyright (c) 2023 OS Systems
 //
 // This file is licensed under the MIT License.
 // Full license text is available in 'licenses/MIT.txt'.
@@ -27,7 +28,8 @@ namespace Antmicro.Renode.Peripherals.Analog
     //     watchdogCount ------ Specifies the number of analog watchdogs inside the peripheral between 1 and 3.
     //    *hasCalibration ----- Specifies whether the calibration factor and voltage regulator are available to the software.
     //                          ADCs without this feature will still have the ADCAL flag available to trigger the calibration procedure,
-    //                          but not the CALFACT register.
+    //                          but not the CALFACT register nor the ADVREGEN field.
+    //     hasHighCalAddress -- Specifies that ADC_CALFACT is at low address or high address.
     //     channelCount ------- Specifies the amount of available channels.
     //                          Includes both internal sources (like the temperature sensor) as well as external.
     //    *hasPrescaler ------- Specifies whether the ADC contains a prescaler for the external clock input.
@@ -62,7 +64,7 @@ namespace Antmicro.Renode.Peripherals.Analog
     public abstract class STM32_ADC_Common : IKnownSize, IProvidesRegisterCollection<DoubleWordRegisterCollection>, IDoubleWordPeripheral, IWordPeripheral, IADC
     {
         public STM32_ADC_Common(IMachine machine, double referenceVoltage, uint externalEventFrequency, int dmaChannel, IDMA dmaPeripheral,
-            int watchdogCount, bool hasCalibration, int channelCount, bool hasPrescaler,
+            int watchdogCount, bool hasCalibration, bool hasHighCalAddress, int channelCount, bool hasPrescaler,
             bool hasVbatPin, bool hasChannelSequence, bool hasPowerRegister, bool hasChannelSelect,
             bool hasOffset, bool hasDifferentialMode, SamplingTime samplingTime, bool dualMode, bool hasLinearityCalibration, bool hasChannelInjection, bool hasSeparateThresholdRegisters, ResolutionRange resolutionRange, bool hasChannelPreselection, bool hasScanDirection)
         {
@@ -101,6 +103,7 @@ namespace Antmicro.Renode.Peripherals.Analog
             }
 
             registers = new DoubleWordRegisterCollection(this, BuildRegistersMap(hasCalibration,
+                                                                                 hasHighCalAddress,
                                                                                  hasPrescaler,
                                                                                  hasVbatPin,
                                                                                  hasChannelSequence,
@@ -459,7 +462,7 @@ namespace Antmicro.Renode.Peripherals.Analog
             return referencedValue;
         }
 
-        private Dictionary<long, DoubleWordRegister> BuildRegistersMap(bool hasCalibration, bool hasPrescaler, bool hasVbatPin, bool hasChannelSequence, bool hasPowerRegister, bool hasOffset, bool hasDifferentialMode, SamplingTime samplingTime, bool dualMode, bool hasLinearityCalibration, bool hasChannelInjection, bool hasSeparateThresholdRegisters, bool hasScanDirection)
+        private Dictionary<long, DoubleWordRegister> BuildRegistersMap(bool hasCalibration, bool hasHighCalAddress, bool hasPrescaler, bool hasVbatPin, bool hasChannelSequence, bool hasPowerRegister, bool hasOffset, bool hasDifferentialMode, SamplingTime samplingTime, bool dualMode, bool hasLinearityCalibration, bool hasChannelInjection, bool hasSeparateThresholdRegisters, bool hasScanDirection)
         {
             var isrRegister = new DoubleWordRegister(this)
                 .WithFlag(0, out adcReadyFlag, FieldMode.Read | FieldMode.WriteOneToClear, name: "ADRDY")
@@ -801,7 +804,8 @@ namespace Antmicro.Renode.Peripherals.Analog
 
             if(hasCalibration)
             {
-                registers.Add((long)Registers.CalibrationFactor, new DoubleWordRegister(this)
+                var calibrationFactorRegister = hasHighCalAddress ? Registers.CalibrationFactorHigh : Registers.CalibrationFactorLow;
+                registers.Add((long)calibrationFactorRegister, new DoubleWordRegister(this)
                     .WithValueField(0, 7, name: "CALFACT")
                     .WithReservedBits(7, 25));
             }
@@ -1231,11 +1235,12 @@ namespace Antmicro.Renode.Peripherals.Analog
             DifferentialMode       = 0xB0, // ADC_DIFSEL
             WatchdogLowThreshold2  = 0xB0, // ADC_LTR2
             WatchdogHighThreshold2 = 0xB4, // ADC_HTR2
+            CalibrationFactorLow   = 0xB4, // ADC_CALFACT (C0/F3/G0/L0)
             WatchdogLowThreshold3  = 0xB8, // ADC_LTR3
             WatchdogHighThreshold3 = 0xBC, // ADC_HTR3
             // Gap intended
             DifferentialMode2      = 0xC0, // ADC_DIFSEL
-            CalibrationFactor      = 0xC4, // ADC_CALFACT
+            CalibrationFactorHigh  = 0xC4, // ADC_CALFACT (H7/WBA)
             CalibrationFactor2     = 0xC8, // ADC_CALFACT2
             // Gap intended
             CommonConfiguration    = 0x308, // ADC_CCR
