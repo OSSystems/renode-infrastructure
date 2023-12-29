@@ -89,6 +89,7 @@ namespace Antmicro.Renode.Peripherals.Analog
             ADCChannelCount = channelCount;
             WatchdogCount = watchdogCount;
             this.hasChannelSelect = hasChannelSelect;
+            this.hasCalibration = hasCalibration;
             this.hasChannelInjection = hasChannelInjection;
             this.resolutionRange = resolutionRange;
             this.hasChannelPreselection = hasChannelPreselection;
@@ -221,6 +222,10 @@ namespace Antmicro.Renode.Peripherals.Analog
             {
                 irq |= endOfConversionInjectedFlag.Value && endOfConversionInjectedInterruptEnable.Value;
                 irq |= endOfSequenceInjectedFlag.Value && endOfSequenceInjectedInterruptEnable.Value;
+            }
+            if(hasCalibration)
+            {
+                irq |= endOfCalibrationFlag.Value && endOfCalibrationInterruptEnable.Value;
             }
             IRQ.Set(irq);
         }
@@ -497,11 +502,11 @@ namespace Antmicro.Renode.Peripherals.Analog
             if(hasCalibration)
             {
                 isrRegister
-                    .WithTaggedFlag("EOCAL", 11)
+                    .WithFlag(11, out endOfCalibrationFlag, FieldMode.Read | FieldMode.WriteOneToClear, name: "EOCAL")
                     // Simplified logic - hardware delays LDORDY until voltage regulator settles.
                     .WithFlag(12, valueProviderCallback: _ => adcRegulatorEnable.Value, name: "LDORDY");
                 interruptEnableRegister
-                    .WithTaggedFlag("EOCALIE", 11)
+                    .WithFlag(11, out endOfCalibrationInterruptEnable, name: "EOCALIE")
                     .WithTaggedFlag("LDORDYIE", 12);
             }
             else
@@ -711,7 +716,10 @@ namespace Antmicro.Renode.Peripherals.Analog
                         }, name: "ADSTP")
                     .WithFlag(28, out adcRegulatorEnable, name: "ADVREGEN")
                     .WithReservedBits(29, 2)
-                    .WithTaggedFlag("ADCAL", 31);
+                    .WithFlag(31, valueProviderCallback: _ => false, writeCallback: (_, __) =>
+                        {
+                            UpdateInterrupts();
+                        }, name: "ADCAL");
 
             if(hasLinearityCalibration)
             {
@@ -1098,12 +1106,14 @@ namespace Antmicro.Renode.Peripherals.Analog
         private IValueRegisterField data;
         private IFlagRegisterField analogWatchdogSingleChannel;
         private IFlagRegisterField endOfSequenceInterruptEnable;
+        private IFlagRegisterField endOfCalibrationInterruptEnable;
         private IFlagRegisterField endOfSamplingInterruptEnable;
         private IFlagRegisterField endOfConversionInterruptEnable;
         private IFlagRegisterField[] analogWatchdogsInterruptEnable;
         private IFlagRegisterField adcReadyInterruptEnable;
         private IFlagRegisterField adcOverrunInterruptEnable;
         private IFlagRegisterField endOfSequenceFlag;
+        private IFlagRegisterField endOfCalibrationFlag;
         private IFlagRegisterField endOfConversionFlag;
         private IFlagRegisterField[] analogWatchdogFlags;
         private IFlagRegisterField adcReadyFlag;
@@ -1148,6 +1158,7 @@ namespace Antmicro.Renode.Peripherals.Analog
         private readonly IDMA dma;
         private readonly int dmaChannel;
         private readonly bool hasChannelSelect;
+        private readonly bool hasCalibration;
         private readonly ResolutionRange resolutionRange;
         private readonly bool hasChannelPreselection;
         private readonly uint externalEventFrequency;
