@@ -244,6 +244,90 @@ namespace Antmicro.Renode.Peripherals.CPU
             }
         }
 
+        [Register]
+        public RegisterValue MSPCURR
+        {
+            get
+            {
+                return GetRegisterValue32((int)CortexMRegisters.MSPCURR);
+            }
+
+            set
+            {
+                SetRegisterValue32((int)CortexMRegisters.MSPCURR, value);
+            }
+        }
+
+        [Register]
+        public RegisterValue PSPCURR
+        {
+            get
+            {
+                return GetRegisterValue32((int)CortexMRegisters.PSPCURR);
+            }
+
+            set
+            {
+                SetRegisterValue32((int)CortexMRegisters.PSPCURR, value);
+            }
+        }
+
+        [Register]
+        public RegisterValue MSPS
+        {
+            get
+            {
+                return GetRegisterValue32((int)CortexMRegisters.MSPS);
+            }
+
+            set
+            {
+                SetRegisterValue32((int)CortexMRegisters.MSPS, value);
+            }
+        }
+
+        [Register]
+        public RegisterValue PSPS
+        {
+            get
+            {
+                return GetRegisterValue32((int)CortexMRegisters.PSPS);
+            }
+
+            set
+            {
+                SetRegisterValue32((int)CortexMRegisters.PSPS, value);
+            }
+        }
+
+        [Register]
+        public RegisterValue MSPNS
+        {
+            get
+            {
+                return GetRegisterValue32((int)CortexMRegisters.MSPNS);
+            }
+
+            set
+            {
+                SetRegisterValue32((int)CortexMRegisters.MSPNS, value);
+            }
+        }
+
+        [Register]
+        public RegisterValue PSPNS
+        {
+            get
+            {
+                return GetRegisterValue32((int)CortexMRegisters.PSPNS);
+            }
+
+            set
+            {
+                SetRegisterValue32((int)CortexMRegisters.PSPNS, value);
+            }
+        }
+
         public RegistersGroup D { get; private set; }
 
         public RegistersGroup S { get; private set; }
@@ -440,6 +524,12 @@ namespace Antmicro.Renode.Peripherals.CPU
             { CortexMRegisters.S29,  new CPURegister(104, 32, isGeneral: false, isReadonly: false, aliases: new [] { "S29" }) },
             { CortexMRegisters.S30,  new CPURegister(105, 32, isGeneral: false, isReadonly: false, aliases: new [] { "S30" }) },
             { CortexMRegisters.S31,  new CPURegister(106, 32, isGeneral: false, isReadonly: false, aliases: new [] { "S31" }) },
+            { CortexMRegisters.MSPCURR,  new CPURegister(107, 32, isGeneral: false, isReadonly: false, aliases: new [] { "MSPCURR" }) },
+            { CortexMRegisters.PSPCURR,  new CPURegister(108, 32, isGeneral: false, isReadonly: false, aliases: new [] { "PSPCURR" }) },
+            { CortexMRegisters.MSPS,  new CPURegister(109, 32, isGeneral: false, isReadonly: false, aliases: new [] { "MSPS" }) },
+            { CortexMRegisters.PSPS,  new CPURegister(110, 32, isGeneral: false, isReadonly: false, aliases: new [] { "PSPS" }) },
+            { CortexMRegisters.MSPNS,  new CPURegister(111, 32, isGeneral: false, isReadonly: false, aliases: new [] { "MSPNS" }) },
+            { CortexMRegisters.PSPNS,  new CPURegister(112, 32, isGeneral: false, isReadonly: false, aliases: new [] { "PSPNS" }) },
         };
     }
 
@@ -462,6 +552,12 @@ namespace Antmicro.Renode.Peripherals.CPU
         VPR = 31,
         NSACR = 32,
         FPSCR = 74,
+        MSPCURR = 107,
+        PSPCURR = 108,
+        MSPS = 109,
+        PSPS = 110,
+        MSPNS = 111,
+        PSPNS = 112,
         R0 = 0,
         R1 = 1,
         R2 = 2,
