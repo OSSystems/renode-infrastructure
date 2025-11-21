@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2010-2024 Antmicro
+// Copyright (c) 2023-2025 OS Systems
 //
 // This file is licensed under the MIT License.
 // Full license text is available in 'licenses/MIT.txt'.
@@ -20,10 +21,10 @@ namespace Antmicro.Renode.Peripherals.Analog
                 dmaChannel,
                 dmaPeripheral,
                 // Base class configuration
-                watchdogCount: 1,
-                hasCalibration: false,
+                watchdogCount: 3,
+                hasCalibration: true,
                 channelCount: 19,
-                hasPrescaler: false,
+                hasPrescaler: true,
                 hasVbatPin: true,
                 hasChannelSelect: true,
                 hasChannelSequence: true,
