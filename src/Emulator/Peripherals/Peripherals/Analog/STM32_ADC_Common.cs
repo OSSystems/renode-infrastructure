@@ -1004,7 +1004,7 @@ namespace Antmicro.Renode.Peripherals.Analog
                 {
                     registers.Add((long)GetConfigurationRegister(i), new DoubleWordRegister(this)
                         .WithFlags(0, ADCChannelCount, out var selectedChannels, name: $"AWD{i + 1}CH")
-                        .WithReservedBits(ADCChannelCount, 31 - ADCChannelCount));
+                        .WithReservedBits(ADCChannelCount, 32 - ADCChannelCount));
                     analogWatchdogSelectedChannels.Add(i, selectedChannels);
                 }
             }
