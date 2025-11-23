@@ -1073,11 +1073,12 @@ namespace Antmicro.Renode.Peripherals.Analog
             {
                 /* SMP1 and SMP2 defined in 0-2 and 4-6, other bits from 8 to 8 + channelCount are
                  * to select SMP1 or SMP2.
+                 * SMP1 and SMP2 values are not used by the model, but software expects to read them back.
                  */
                 var smpr = new DoubleWordRegister(this)
-                    .WithTag("SMP1", 0, 3)
+                    .WithValueField(0, 3, name: "SMP1")
                     .WithReservedBits(3, 1)
-                    .WithTag("SMP2", 4, 3)
+                    .WithValueField(4, 3, name: "SMP2")
                     .WithReservedBits(7, 1);
                 for(int i = 0; i < ADCChannelCount; i++)
                 {
