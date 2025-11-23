@@ -856,8 +856,7 @@ namespace Antmicro.Renode.Peripherals.Analog
             }
             if(WatchdogCount == 3)
             {
-                // NOTE: If given implementation doesn't have channel selection, the third Watchdog Threshold will be under ChannelSelection offset
-                registers.Add(hasChannelSelect ? (long)Registers.Watchdog3Threshold : (long)Registers.ChannelSelection, new DoubleWordRegister(this)
+                registers.Add((long)Registers.Watchdog3Threshold, new DoubleWordRegister(this)
                     .WithValueField(0, 12, out analogWatchdogLowValues[2], name: "LT")
                     .WithReservedBits(12, 4)
                     .WithValueField(16, 12, out analogWatchdogHighValues[2], name: "HT")
