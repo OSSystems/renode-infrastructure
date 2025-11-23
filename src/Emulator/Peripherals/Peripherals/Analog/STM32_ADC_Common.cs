@@ -24,34 +24,35 @@ namespace Antmicro.Renode.Peripherals.Analog
     // Superset of all ADC features found on many STM MPU series.
     //
     // Available features:
-    //     watchdogCount ------ Specifies the number of analog watchdogs inside the peripheral between 1 and 3.
-    //    *hasCalibration ----- Specifies whether the calibration factor and voltage regulator are available to the software.
-    //                          ADCs without this feature will still have the ADCAL flag available to trigger the calibration procedure,
-    //                          but not the CALFACT register nor the ADVREGEN field.
-    //     hasHighCalAddress -- Specifies that ADC_CALFACT is at low address or high address.
-    //     channelCount ------- Specifies the amount of available channels.
-    //                          Includes both internal sources (like the temperature sensor) as well as external.
-    //    *hasPrescaler ------- Specifies whether the ADC contains a prescaler for the external clock input.
-    //                          Technically either this property could be made an enum,
-    //                          or there could be added a separate property which describes whether the internal clock can be used.
-    //                          ex.
-    //                            - the STM32F0xx can either use PCLK or the ADC asynchronous clock and has no precaler
-    //                            - the STM32WBA only uses the ADC asynchronous clock but has a precaler
-    //                          but for now, this feature describes both (i.e. true means has prescaler *and* no internal clock).
-    //    *hasVbatPin --------- Specifies whether this ADC provides a pin for monitoring of an external power supply.
-    //    *hasChannelSequence - Specifies whether this ADC provides a fully configurable sequencer.
-    //                          If not, the ADC can convert a single channel or a sequence of channels,
-    //                          but only scanning sequentially either forwards or backwards.
-    //    *hasPowerRegister --- Specifies whether this ADC has a separate register for power managment.
-    //                          If false, that means the model exposes features like auto-off in one of the configuration registers.
-    //    *hasChannelSelect --- Specifies whether this ADC has channel selection register.
-    //                          If false, third watchdog threshold configuration register will live under this register's offset.
-    //    *hasOffset ---------- Specifies whether this ADC has offset registers. These registers are tagged but not used by the model.
-    //    *hasDifferentialMode  Specifies whether this has differential mode. The differential mode register is tagged but its
-    //                          value is not used by the model.
-    //    *samplingTime ------- Specifies from the SamplingTime enum how the sampling time registers are defined. These registers
-    //                          are tagged but their value are not used by the model.
-    //    *dualMode ----------- Indicates if there is a secondary ADC that can work in dual mode.
+    //     watchdogCount ---------- Specifies the number of analog watchdogs inside the peripheral between 1 and 3.
+    //    *hasCalibration --------- Specifies whether the calibration factor and voltage regulator are available to the software.
+    //                              ADCs without this feature will still have the ADCAL flag available to trigger the calibration procedure,
+    //                              but not the CALFACT register nor the ADVREGEN field.
+    //     hasHighCalAddress ------ Specifies that ADC_CALFACT is at low address or high address.
+    //     channelCount ----------- Specifies the amount of available channels.
+    //                              Includes both internal sources (like the temperature sensor) as well as external.
+    //    *hasPrescaler ----------- Specifies whether the ADC contains a prescaler for the external clock input.
+    //                              Technically either this property could be made an enum,
+    //                              or there could be added a separate property which describes whether the internal clock can be used.
+    //                              ex.
+    //                                - the STM32F0xx can either use PCLK or the ADC asynchronous clock and has no precaler
+    //                                - the STM32WBA only uses the ADC asynchronous clock but has a precaler
+    //                              but for now, this feature describes both (i.e. true means has prescaler *and* no internal clock).
+    //    *hasVbatPin ------------- Specifies whether this ADC provides a pin for monitoring of an external power supply.
+    //    *hasChannelSequence ----- Specifies whether this ADC provides a fully configurable sequencer.
+    //                              If not, the ADC can convert a single channel or a sequence of channels,
+    //                              but only scanning sequentially either forwards or backwards.
+    //    *hasPowerRegister ------- Specifies whether this ADC has a separate register for power managment.
+    //                              If false, that means the model exposes features like auto-off in one of the configuration registers.
+    //    *hasChannelSelect ------- Specifies whether this ADC has channel selection register.
+    //                              If false, third watchdog threshold configuration register will live under this register's offset.
+    //    *hasOffset -------------- Specifies whether this ADC has offset registers. These registers are tagged but not used by the model.
+    //    *hasDifferentialMode ---- Specifies whether this has differential mode. The differential mode register is tagged but its
+    //                              value is not used by the model.
+    //    *samplingTime ----------- Specifies from the SamplingTime enum how the sampling time registers are defined. These registers
+    //                              are tagged but their value are not used by the model.
+    //    *dualMode --------------- Indicates if there is a secondary ADC that can work in dual mode.
+    //    *hasEnhanceSamplingTime - Specifies whether this ADC has the ability to select more then one sampling time.
     //
     // * - Feature is either partially implemented, or not at all.
     public abstract class STM32_ADC_Common : IKnownSize, IProvidesRegisterCollection<DoubleWordRegisterCollection>, IDoubleWordPeripheral, IWordPeripheral
@@ -59,11 +60,11 @@ namespace Antmicro.Renode.Peripherals.Analog
         public STM32_ADC_Common(IMachine machine, double referenceVoltage, uint externalEventFrequency, int dmaChannel = 0, IDMA dmaPeripheral = null,
             int? watchdogCount = null, bool? hasCalibration = null, bool? hasHighCalAddress = null, int? channelCount = null, bool? hasPrescaler = null,
             bool? hasVbatPin = null, bool? hasChannelSequence = null, bool? hasPowerRegister = null, bool? hasChannelSelect = null,
-            bool? hasOffset = null, bool? hasDifferentialMode = null, SamplingTime? samplingTime = null, bool? dualMode = null)
+            bool? hasOffset = null, bool? hasDifferentialMode = null, SamplingTime? samplingTime = null, bool? dualMode = null, bool? hasEnhanceSamplingTime = null)
         {
             if(!watchdogCount.HasValue || !hasCalibration.HasValue || !hasHighCalAddress.HasValue || !channelCount.HasValue || !hasPrescaler.HasValue ||
                 !hasVbatPin.HasValue || !hasChannelSequence.HasValue || !hasPowerRegister.HasValue || !hasChannelSelect.HasValue ||
-                !hasOffset.HasValue || !hasDifferentialMode.HasValue || !samplingTime.HasValue || !dualMode.HasValue)
+                !hasOffset.HasValue || !hasDifferentialMode.HasValue || !samplingTime.HasValue || !dualMode.HasValue || !hasEnhanceSamplingTime.HasValue)
             {
                 throw new ConstructionException("Missing configuration options");
             }
@@ -116,7 +117,8 @@ namespace Antmicro.Renode.Peripherals.Analog
                                                                                  hasOffset.Value,
                                                                                  hasDifferentialMode.Value,
                                                                                  samplingTime.Value,
-                                                                                 dualMode.Value));
+                                                                                 dualMode.Value,
+                                                                                 hasEnhanceSamplingTime.Value));
 
             IRQ = new GPIO();
             this.dmaChannel = dmaChannel;
@@ -429,7 +431,7 @@ namespace Antmicro.Renode.Peripherals.Analog
         {
             sampleProvider[channelNumber].TryDequeueNewSample();
             var sample = sampleProvider[channelNumber].Sample;
-            return MilivoltsToSample((double)sample.Value);
+            return MillivoltsToSample((double)sample.Value);
         }
 
         private uint MillivoltsToSample(double sampleInMillivolts)
@@ -466,7 +468,7 @@ namespace Antmicro.Renode.Peripherals.Analog
             return referencedValue;
         }
 
-        private Dictionary<long, DoubleWordRegister> BuildRegistersMap(bool hasCalibration, bool hasHighCalAddress, bool hasPrescaler, bool hasVbatPin, bool hasChannelSequence, bool hasPowerRegister, bool hasOffset, bool hasDifferentialMode, SamplingTime samplingTime, bool dualMode)
+        private Dictionary<long, DoubleWordRegister> BuildRegistersMap(bool hasCalibration, bool hasHighCalAddress, bool hasPrescaler, bool hasVbatPin, bool hasChannelSequence, bool hasPowerRegister, bool hasOffset, bool hasDifferentialMode, SamplingTime samplingTime, bool dualMode, bool hasEnhanceSamplingTime)
         {
             var isrRegister = new DoubleWordRegister(this)
                 .WithFlag(0, out adcReadyFlag, FieldMode.Read | FieldMode.WriteOneToClear, name: "ADRDY")
@@ -636,6 +638,56 @@ namespace Antmicro.Renode.Peripherals.Analog
                 .WithReservedBits(10, 20)
                 .WithTag("CKMODE", 30, 2);
 
+            var samplingRegister = new DoubleWordRegister(this);
+            if(hasEnhanceSamplingTime)
+            {
+                samplingRegister
+                    .WithFlags(0, 3, name: "SMP1")
+                    .WithReservedBits(3, 1)
+                    .WithFlags(4, 3, name: "SMP2")
+                    .WithReservedBits(7, 1)
+                    .WithTaggedFlag("SMPSEL0", 8)
+                    .WithTaggedFlag("SMPSEL1", 9)
+                    .WithTaggedFlag("SMPSEL2", 10)
+                    .WithTaggedFlag("SMPSEL3", 11)
+                    .WithTaggedFlag("SMPSEL4", 12)
+                    .WithTaggedFlag("SMPSEL5", 13)
+                    .WithTaggedFlag("SMPSEL6", 14)
+                    .WithTaggedFlag("SMPSEL7", 15)
+                    .WithTaggedFlag("SMPSEL8", 16)
+                    .WithTaggedFlag("SMPSEL9", 17)
+                    .WithTaggedFlag("SMPSEL10", 18)
+                    .WithTaggedFlag("SMPSEL11", 19)
+                    .WithTaggedFlag("SMPSEL12", 20)
+                    .WithTaggedFlag("SMPSEL13", 21)
+                    .WithTaggedFlag("SMPSEL14", 22)
+                    .WithTaggedFlag("SMPSEL15", 23)
+                    .WithTaggedFlag("SMPSEL16", 24)
+                    .WithTaggedFlag("SMPSEL17", 25)
+                    .WithTaggedFlag("SMPSEL18", 26);
+
+                if(ChannelCount > 19)
+                {
+                    samplingRegister
+                        .WithTaggedFlag("SMPSEL19", 27)
+                        .WithTaggedFlag("SMPSEL20", 28)
+                        .WithTaggedFlag("SMPSEL21", 29)
+                        .WithTaggedFlag("SMPSEL22", 30)
+                        .WithReservedBits(31, 1);
+                }
+                else
+                {
+                    samplingRegister
+                        .WithReservedBits(27, 5);
+                }
+            }
+            else
+            {
+                samplingRegister
+                    .WithFlags(0, 3, name: "SMP")
+                    .WithReservedBits(3, 29);
+            }
+
             var commonConfigurationRegister = new DoubleWordRegister(this)
                 .WithReservedBits(0, 18)
                 .WithTaggedFlag("VREFEN", 22)
@@ -732,7 +784,7 @@ namespace Antmicro.Renode.Peripherals.Analog
                 {(long)Registers.CommonConfiguration, commonConfigurationRegister},
             };
 
-            BuildSampingTimeRegisters(registers, samplingTime);
+            BuildSampingTimeRegisters(registers, samplingTime, hasEnhanceSamplingTime ? samplingRegister : null);
 
             // Optional registers
             if(hasChannelSelect)
@@ -829,8 +881,13 @@ namespace Antmicro.Renode.Peripherals.Analog
             return registers;
         }
 
-        private void BuildSampingTimeRegisters(Dictionary<long, DoubleWordRegister> registers, SamplingTime samplingTime)
+        private void BuildSampingTimeRegisters(Dictionary<long, DoubleWordRegister> registers, SamplingTime samplingTime, DoubleWordRegister prebuiltSamplingRegister = null)
         {
+            if(prebuiltSamplingRegister != null)
+            {
+                registers.Add((long)Registers.SamplingTime, prebuiltSamplingRegister);
+                return;
+            }
             if(samplingTime == SamplingTime.OneForAll)
             {
                 registers.Add((long)Registers.SamplingTime, new DoubleWordRegister(this)
