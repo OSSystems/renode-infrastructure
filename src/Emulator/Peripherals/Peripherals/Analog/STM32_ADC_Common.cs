@@ -199,9 +199,14 @@ namespace Antmicro.Renode.Peripherals.Analog
             }
         }
 
+        private bool IsCurrentChannelValid()
+        {
+            return currentChannel >= 0 && currentChannel < ADCChannelCount;
+        }
+
         private void WarnOnCurrentChannelNotPreselected()
         {
-            if(hasChannelPreselection && !preselectedChannels[currentChannel].Value)
+            if(hasChannelPreselection && IsCurrentChannelValid() && !preselectedChannels[currentChannel].Value)
             {
                 this.Log(LogLevel.Warning, "Channel {0} is not preselected", currentChannel);
             }
@@ -295,6 +300,11 @@ namespace Antmicro.Renode.Peripherals.Analog
 
         private bool WatchdogEnabled(int watchdogNumber)
         {
+            if(watchdogNumber < 0 || watchdogNumber >= WatchdogCount || !IsCurrentChannelValid())
+            {
+                return false;
+            }
+
             switch(watchdogNumber)
             {
             case 0:
@@ -302,7 +312,9 @@ namespace Antmicro.Renode.Peripherals.Analog
                 var enabledOnCurrent = enabledOnAll || (int)analogWatchdogChannel.Value == currentChannel;
                 return analogWatchdogEnable.Value && enabledOnCurrent;
             default:
-                return analogWatchdogSelectedChannels[watchdogNumber][currentChannel].Value;
+                return analogWatchdogSelectedChannels.TryGetValue(watchdogNumber, out var selectedChannels)
+                    && currentChannel < selectedChannels.Length
+                    && selectedChannels[currentChannel].Value;
             }
         }
 
@@ -330,6 +342,12 @@ namespace Antmicro.Renode.Peripherals.Analog
                 sequenceCounter = 0;
                 sequenceInProgress = false;
                 return;
+            }
+
+            if(sequenceInProgress && !IsCurrentChannelValid())
+            {
+                this.Log(LogLevel.Warning, "Invalid channel {0} in sequence, finishing sequence", currentChannel);
+                FinishSequence();
             }
 
             if(sequenceInProgress)
@@ -428,11 +446,16 @@ namespace Antmicro.Renode.Peripherals.Analog
             if(iterationFinished)
             {
                 this.Log(LogLevel.Debug, "No more channels enabled");
-                endOfSequenceFlag.Value = true;
-                sequenceCounter = 0;
-                startFlag.Value = false;
-                sequenceInProgress = false;
+                FinishSequence();
             }
+        }
+
+        private void FinishSequence()
+        {
+            endOfSequenceFlag.Value = true;
+            sequenceCounter = 0;
+            startFlag.Value = false;
+            sequenceInProgress = false;
         }
 
         private bool SwitchToNextChannel()
@@ -445,11 +468,18 @@ namespace Antmicro.Renode.Peripherals.Analog
             else
             {
                 sequenceCounter = (scanDirection == ScanDirection.Ascending) ? sequenceCounter + 1 : sequenceCounter - 1;
-                if(sequenceCounter >= 0 && sequenceCounter <= (int)regularSequenceLength.Value)
+                if(sequenceCounter < 0 || sequenceCounter > (int)regularSequenceLength.Value)
                 {
-                    currentChannel = (int)regularSequence[sequenceCounter].Value;
+                    return true;
                 }
-                return sequenceCounter > (int)regularSequenceLength.Value || sequenceCounter < 0 || currentChannel < 0;
+
+                currentChannel = (int)regularSequence[sequenceCounter].Value;
+                if(!IsCurrentChannelValid())
+                {
+                    this.Log(LogLevel.Warning, "Invalid channel {0} in sequence position {1}", currentChannel, sequenceCounter);
+                    return true;
+                }
+                return false;
             }
         }
 
