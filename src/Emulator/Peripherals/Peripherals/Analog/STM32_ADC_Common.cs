@@ -37,24 +37,25 @@ namespace Antmicro.Renode.Peripherals.Analog
     //                            - the STM32F0xx can either use PCLK or the ADC asynchronous clock and has no precaler
     //                            - the STM32WBA only uses the ADC asynchronous clock but has a precaler
     //                          but for now, this feature describes both (i.e. true means has prescaler *and* no internal clock).
-    //    *hasVbatPin --------- Specifies whether this ADC provides a pin for monitoring of an external power supply.
-    //    *hasChannelSequence - Specifies whether this ADC provides a fully configurable sequencer.
-    //                          If not, the ADC can convert a single channel or a sequence of channels,
-    //                          but only scanning sequentially either forwards or backwards.
-    //    *hasPowerRegister --- Specifies whether this ADC has a separate register for power managment.
-    //                          If false, that means the model exposes features like auto-off in one of the configuration registers.
-    //    *hasChannelSelect --- Specifies whether this ADC has channel selection register.
-    //                          If false, third watchdog threshold configuration register will live under this register's offset.
+    //    *hasVbatPin ------------- Specifies whether this ADC provides a pin for monitoring of an external power supply.
+    //    *hasChannelSequence ----- Specifies whether this ADC provides a fully configurable sequencer.
+    //                              If not, the ADC can convert a single channel or a sequence of channels,
+    //                              but only scanning sequentially either forwards or backwards.
+    //    *hasPowerRegister ------- Specifies whether this ADC has a separate register for power managment.
+    //                              If false, that means the model exposes features like auto-off in one of the configuration registers.
+    //    *hasChannelSelect ------- Specifies whether this ADC has channel selection register.
+    //                              If false, third watchdog threshold configuration register will live under this register's offset.
+    //    *hasEnhanceSamplingTime - Specifies whether this ADC has the ability to select more then one sampling time.
     //
     // * - Feature is either partially implemented, or not at all.
     public abstract class STM32_ADC_Common : IKnownSize, IProvidesRegisterCollection<DoubleWordRegisterCollection>, IDoubleWordPeripheral
     {
         public STM32_ADC_Common(IMachine machine, double referenceVoltage, uint externalEventFrequency, int dmaChannel = 0, IDMA dmaPeripheral = null,
             int? watchdogCount = null, bool? hasCalibration = null, bool? hasHighCalAddress = null, int? channelCount = null, bool? hasPrescaler = null,
-            bool? hasVbatPin = null, bool? hasChannelSequence = null, bool? hasPowerRegister = null, bool? hasChannelSelect = null)
+            bool? hasVbatPin = null, bool? hasChannelSequence = null, bool? hasPowerRegister = null, bool? hasChannelSelect = null, bool? hasEnhanceSamplingTime = null)
         {
             if(!watchdogCount.HasValue || !hasCalibration.HasValue || !hasHighCalAddress.HasValue || !channelCount.HasValue || !hasPrescaler.HasValue ||
-                !hasVbatPin.HasValue || !hasChannelSequence.HasValue || !hasPowerRegister.HasValue || !hasChannelSelect.HasValue)
+                !hasVbatPin.HasValue || !hasChannelSequence.HasValue || !hasPowerRegister.HasValue || !hasChannelSelect.HasValue || !hasEnhanceSamplingTime.HasValue)
             {
                 throw new ConstructionException("Missing configuration options");
             }
@@ -81,6 +82,7 @@ namespace Antmicro.Renode.Peripherals.Analog
             bool prescaler = hasPrescaler.Value;
             bool vbatPin = hasVbatPin.Value;
             bool powerRegister = hasPowerRegister.Value;
+            bool enhanceSamplingTime = hasEnhanceSamplingTime.Value;
             ChannelCount = channelCount.Value;
             WatchdogCount = watchdogCount.Value;
             this.hasChannelSelect = hasChannelSelect.Value;
@@ -103,7 +105,7 @@ namespace Antmicro.Renode.Peripherals.Analog
                 analogWatchdog3SelectedChannels = new IFlagRegisterField[ChannelCount];
             }
 
-            registers = new DoubleWordRegisterCollection(this, BuildRegistersMap(calibration, calibrationHighAddress, prescaler, vbatPin, powerRegister));
+            registers = new DoubleWordRegisterCollection(this, BuildRegistersMap(calibration, calibrationHighAddress, prescaler, vbatPin, powerRegister, enhanceSamplingTime));
 
             IRQ = new GPIO();
             this.dmaChannel = dmaChannel;
@@ -398,7 +400,7 @@ namespace Antmicro.Renode.Peripherals.Analog
             return referencedValue;
         }
 
-        private Dictionary<long, DoubleWordRegister> BuildRegistersMap(bool hasCalibration, bool hasHighCalAddress, bool hasPrescaler, bool hasVbatPin, bool hasPowerRegister)
+        private Dictionary<long, DoubleWordRegister> BuildRegistersMap(bool hasCalibration, bool hasHighCalAddress, bool hasPrescaler, bool hasVbatPin, bool hasPowerRegister, bool hasEnhanceSamplingTime)
         {
             var isrRegister = new DoubleWordRegister(this)
                 .WithFlag(0, out adcReadyFlag, FieldMode.Read | FieldMode.WriteOneToClear, name: "ADRDY")
@@ -550,6 +552,56 @@ namespace Antmicro.Renode.Peripherals.Analog
                 .WithReservedBits(10, 20)
                 .WithTag("CKMODE", 30, 2);
 
+            var samplingRegister = new DoubleWordRegister(this);
+            if(hasEnhanceSamplingTime)
+            {
+                samplingRegister
+                    .WithFlags(0, 3, name: "SMP1")
+                    .WithReservedBits(3, 1)
+                    .WithFlags(4, 3, name: "SMP2")
+                    .WithReservedBits(7, 1)
+                    .WithTaggedFlag("SMPSEL0", 8)
+                    .WithTaggedFlag("SMPSEL1", 9)
+                    .WithTaggedFlag("SMPSEL2", 10)
+                    .WithTaggedFlag("SMPSEL3", 11)
+                    .WithTaggedFlag("SMPSEL4", 12)
+                    .WithTaggedFlag("SMPSEL5", 13)
+                    .WithTaggedFlag("SMPSEL6", 14)
+                    .WithTaggedFlag("SMPSEL7", 15)
+                    .WithTaggedFlag("SMPSEL8", 16)
+                    .WithTaggedFlag("SMPSEL9", 17)
+                    .WithTaggedFlag("SMPSEL10", 18)
+                    .WithTaggedFlag("SMPSEL11", 19)
+                    .WithTaggedFlag("SMPSEL12", 20)
+                    .WithTaggedFlag("SMPSEL13", 21)
+                    .WithTaggedFlag("SMPSEL14", 22)
+                    .WithTaggedFlag("SMPSEL15", 23)
+                    .WithTaggedFlag("SMPSEL16", 24)
+                    .WithTaggedFlag("SMPSEL17", 25)
+                    .WithTaggedFlag("SMPSEL18", 26);
+
+                if(ChannelCount > 19)
+                {
+                    samplingRegister
+                        .WithTaggedFlag("SMPSEL19", 27)
+                        .WithTaggedFlag("SMPSEL20", 28)
+                        .WithTaggedFlag("SMPSEL21", 29)
+                        .WithTaggedFlag("SMPSEL22", 30)
+                        .WithReservedBits(31, 1);
+                }
+                else
+                {
+                    samplingRegister
+                        .WithReservedBits(27, 5);
+                }
+            }
+            else
+            {
+                samplingRegister
+                    .WithFlags(0, 3, name: "SMP")
+                    .WithReservedBits(3, 29);
+            }
+
             var commonConfigurationRegister = new DoubleWordRegister(this)
                 .WithReservedBits(0, 18)
                 .WithTaggedFlag("VREFEN", 22)
@@ -630,10 +682,7 @@ namespace Antmicro.Renode.Peripherals.Analog
                 },
                 {(long)Registers.Configuration1, configurationRegister1},
                 {(long)Registers.Configuration2, configurationRegister2},
-                {(long)Registers.SamplingTime, new DoubleWordRegister(this)
-                    .WithTag("SMP", 0, 3)
-                    .WithReservedBits(3, 29)
-                },
+                {(long)Registers.SamplingTime, samplingRegister},
                 {(long)Registers.RegularSequence1, regularSequence1},
                 {(long)Registers.DataRegister, new DoubleWordRegister(this)
                     .WithValueField(0, 16, out data, FieldMode.Read, readCallback: (_, __) =>
