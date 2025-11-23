@@ -349,8 +349,8 @@ namespace Antmicro.Renode.Peripherals.Analog
 
         private uint GetSampleFromChannel(int channelNumber)
         {
-            var sample = sampleProvider[channelNumber].Sample;
             sampleProvider[channelNumber].TryDequeueNewSample();
+            var sample = sampleProvider[channelNumber].Sample;
             return MilivoltsToSample((double)sample.Value);
         }
 
