@@ -307,18 +307,38 @@ namespace Antmicro.Renode.Peripherals.Analog
             }
         }
 
+        private bool IsCurrentChannelValid()
+        {
+            return currentChannel >= 0 && currentChannel < ChannelCount;
+        }
+
         private bool WatchdogEnabled(int watchdogNumber)
         {
+            if(watchdogNumber < 0 || watchdogNumber >= WatchdogCount)
+            {
+                return false;
+            }
+
+            if(!IsCurrentChannelValid())
+            {
+                return false;
+            }
+
             switch(watchdogNumber)
             {
             case 0:
                 var enabledOnAll = !analogWatchdogSingleChannel.Value;
                 var enabledOnCurrent = enabledOnAll || (int)analogWatchdogChannel.Value == currentChannel;
                 return analogWatchdogEnable.Value && enabledOnCurrent;
-            case 1:
-                return analogWatchdog2SelectedChannels[currentChannel].Value;
-            case 2:
-                return analogWatchdog3SelectedChannels[currentChannel].Value;
+             case 1:
+                return analogWatchdog2SelectedChannels != null &&
+                    currentChannel < analogWatchdog2SelectedChannels.Length &&
+                    analogWatchdog2SelectedChannels[currentChannel].Value;
+             case 2:
+
+                return analogWatchdog3SelectedChannels != null &&
+                    currentChannel < analogWatchdog3SelectedChannels.Length &&
+                    analogWatchdog3SelectedChannels[currentChannel].Value;
             }
             throw new UnreachableException("Watchdog count is checked in the constructor");
         }
@@ -337,14 +357,14 @@ namespace Antmicro.Renode.Peripherals.Analog
             Func<bool> iterationFinished = null;
             if(hasChannelSelect)
             {
-                iterationFinished = () => currentChannel >= ChannelCount;
+                iterationFinished = () => currentChannel >= ChannelCount || currentChannel < 0;
             }
             else
             {
-                iterationFinished = () => sequenceCounter > (int)regularSequenceLength.Value;
+                iterationFinished = () => sequenceCounter > (int)regularSequenceLength.Value || sequenceCounter < 0;
             }
 
-            while(!iterationFinished() && currentChannel >= 0)
+            while(!iterationFinished() && IsCurrentChannelValid())
             {
                 if(hasChannelSelect && !channelSelected[currentChannel])
                 {
@@ -395,10 +415,12 @@ namespace Antmicro.Renode.Peripherals.Analog
                     return;
                 }
             }
+
             this.Log(LogLevel.Debug, "No more channels enabled");
             endOfSequenceFlag.Value = true;
             sequenceInProgress = false;
             sequenceCounter = 0;
+            currentChannel = 0;
             UpdateInterrupts();
             startFlag.Value = false;
 
@@ -418,11 +440,26 @@ namespace Antmicro.Renode.Peripherals.Analog
             else
             {
                 sequenceCounter = (scanDirection.Value == ScanDirection.Ascending) ? sequenceCounter + 1 : sequenceCounter - 1;
-                // NOTE: Sequence finishes when `sequenceCounter` is either greater than `regularSequenceLength` or less than `0`.
-                // In both of those cases, we assume that at this point `currentChannel` will contain invalid value.
+
+                // Only update currentChannel if sequenceCounter is within valid range
                 if(sequenceCounter >= 0 && sequenceCounter <= (int)regularSequenceLength.Value)
                 {
-                    currentChannel = (int)regularSequence[sequenceCounter].Value;
+                    var newChannel = (int)regularSequence[sequenceCounter].Value;
+
+                    // Validate the channel from sequence before assigning
+                    if(newChannel >= 0 && newChannel < ChannelCount)
+                    {
+                        currentChannel = newChannel;
+                    }
+                    else
+                    {
+                        this.Log(LogLevel.Warning, "Invalid channel {0} in sequence position {1}", newChannel, sequenceCounter);
+                        currentChannel = -1; // Mark as invalid
+                    }
+                }
+                else
+                {
+                    currentChannel = -1; // Mark as invalid when sequence is finished
                 }
             }
         }
