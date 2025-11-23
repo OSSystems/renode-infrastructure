@@ -29,7 +29,12 @@ namespace Antmicro.Renode.Peripherals.Analog
                 hasVbatPin: false,
                 hasChannelSelect: true,
                 hasChannelSequence: false,
-                hasPowerRegister: true
+                hasPowerRegister: true,
+                hasOffset: false,
+                hasDifferentialMode: false,
+                samplingTime: SamplingTime.OneForAll,
+                dualMode: false,
+                hasEnhanceSamplingTime: false
             )
         {}
     }
