@@ -241,19 +241,19 @@ namespace Antmicro.Renode.Peripherals.CPU
                 {
                     mProfileFeature.Registers.Add(new GDBRegisterDescriptor(index, 32, $"r{index}", "uint32", "general"));
                 }
-                mProfileFeature.Registers.Add(new GDBRegisterDescriptor(13, 32, "sp", "data_ptr", "general"));
-                mProfileFeature.Registers.Add(new GDBRegisterDescriptor(14, 32, "lr", "uint32", "general"));
-                mProfileFeature.Registers.Add(new GDBRegisterDescriptor(15, 32, "pc", "code_ptr", "general"));
-                mProfileFeature.Registers.Add(new GDBRegisterDescriptor(25, 32, "xpsr", "uint32", "general"));
+                mProfileFeature.Registers.Add(new GDBRegisterDescriptor((uint)CortexMRegisters.SP, 32, "sp", "data_ptr", "general"));
+                mProfileFeature.Registers.Add(new GDBRegisterDescriptor((uint)CortexMRegisters.LR, 32, "lr", "uint32", "general"));
+                mProfileFeature.Registers.Add(new GDBRegisterDescriptor((uint)CortexMRegisters.PC, 32, "pc", "code_ptr", "general"));
+                mProfileFeature.Registers.Add(new GDBRegisterDescriptor((uint)CortexMRegisters.CPSR, 32, "xpsr", "uint32", "general"));    // cpsr is aliased to xpsr in tlibs
                 features.Add(mProfileFeature);
 
                 var mSystemFeature = new GDBFeatureDescriptor("org.gnu.gdb.arm.m-system");
-                mSystemFeature.Registers.Add(new GDBRegisterDescriptor(26, 32, "msp", "uint32", "general"));
-                mSystemFeature.Registers.Add(new GDBRegisterDescriptor(27, 32, "psp", "uint32", "general"));
-                mSystemFeature.Registers.Add(new GDBRegisterDescriptor(28, 32, "primask", "uint32", "general"));
-                mSystemFeature.Registers.Add(new GDBRegisterDescriptor(29, 32, "basepri", "uint32", "general"));
-                mSystemFeature.Registers.Add(new GDBRegisterDescriptor(30, 32, "faultmask", "uint32", "general"));
-                mSystemFeature.Registers.Add(new GDBRegisterDescriptor(31, 32, "control", "uint32", "general"));
+                mSystemFeature.Registers.Add(new GDBRegisterDescriptor((uint)CortexMRegisters.MSPCURR, 32, "msp", "uint32", "general"));
+                mSystemFeature.Registers.Add(new GDBRegisterDescriptor((uint)CortexMRegisters.PSPCURR, 32, "psp", "uint32", "general"));
+                mSystemFeature.Registers.Add(new GDBRegisterDescriptor((uint)CortexMRegisters.PRIMASK, 32, "primask", "uint32", "general"));
+                mSystemFeature.Registers.Add(new GDBRegisterDescriptor((uint)CortexMRegisters.BasePri, 32, "basepri", "uint32", "general"));
+                mSystemFeature.Registers.Add(new GDBRegisterDescriptor((uint)CortexMRegisters.FAULTMASK, 32, "faultmask", "uint32", "general"));
+                mSystemFeature.Registers.Add(new GDBRegisterDescriptor((uint)CortexMRegisters.Control, 32, "control", "uint32", "general"));
                 features.Add(mSystemFeature);
 
                 bool hasMProfileVectorExtensions = GetArmFeature(ArmFeatures.ARM_FEATURE_MVE);
@@ -274,6 +274,12 @@ namespace Antmicro.Renode.Peripherals.CPU
                     mveProfileFeature.Registers.Add(new GDBRegisterDescriptor((uint)CortexMRegisters.VPR, 32, "vpr", "vpr_reg", "vector"));
                     features.Add(mveProfileFeature);
                 }
+                var mSecextFeature = new GDBFeatureDescriptor("org.gnu.gdb.arm.secext");
+                mSecextFeature.Registers.Add(new GDBRegisterDescriptor((uint)CortexMRegisters.MSPS, 32, "msp_s", "uint32", "general"));
+                mSecextFeature.Registers.Add(new GDBRegisterDescriptor((uint)CortexMRegisters.PSPS, 32, "psp_s", "uint32", "general"));
+                mSecextFeature.Registers.Add(new GDBRegisterDescriptor((uint)CortexMRegisters.MSPNS, 32, "msp_ns", "uint32", "general"));
+                mSecextFeature.Registers.Add(new GDBRegisterDescriptor((uint)CortexMRegisters.PSPNS, 32, "psp_ns", "uint32", "general"));
+                features.Add(mSecextFeature);
 
                 // +++++ Important
                 // tlibs implement VFP using DOUBLE PRECISION FP (64 bit) registers.
