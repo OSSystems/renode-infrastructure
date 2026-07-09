@@ -131,8 +131,9 @@ namespace Antmicro.Renode.Time
         {
             using(MonitorSmartLock.Lock(innerLock))
             {
-                DebugHelper.Assert(TimeSource.ElapsedVirtualTime >= TotalElapsedTime, $"Trying to move time handle back in time from: {TotalElapsedTime} to {TimeSource.ElapsedVirtualTime}");
-                TotalElapsedTime = TimeSource.ElapsedVirtualTime;
+                DebugHelper.Assert(TimeSource.NearestSyncPoint >= TotalElapsedTime, $"Trying to move time handle back in time from: {TotalElapsedTime} to {TimeSource.NearestSyncPoint}");
+                // `NearestSyncPoint` represents the time all handles "should" be at - blocked handles will be stuck in an earlier time (due to being blocked), but eventually they're supposed to converge to `NearestSyncPoint`
+                TotalElapsedTime = TimeSource.NearestSyncPoint;
             }
         }
 
