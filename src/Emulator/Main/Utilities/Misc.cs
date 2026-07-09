@@ -1801,6 +1801,17 @@ namespace Antmicro.Renode.Utilities
             }
         }
 
+        public static IEnumerable<LinkedListNode<T>> Nodes<T>(this LinkedList<T> me)
+        {
+            var node = me.First;
+            while(node != null)
+            {
+                var next = node.Next;
+                yield return node;
+                node = next;
+            }
+        }
+
         public static bool IsOnOsX
         {
             get

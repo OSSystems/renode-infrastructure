@@ -9,6 +9,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 
+using Antmicro.Renode.Utilities;
+
 namespace Antmicro.Renode.Time
 {
     /// <summary>
@@ -63,12 +65,9 @@ namespace Antmicro.Renode.Time
             // After unlatch some handles might be disabled.
             // Disabling not ready handles make them ready.
             // We need to update list to reflect changes.
-            var currentNode = notReady.First;
-            while(currentNode != null)
+            foreach(var node in notReady.Nodes())
             {
-                var next = currentNode.Next;
-                UpdateHandle(currentNode);
-                currentNode = next;
+                UpdateHandle(node);
             }
         }
 
@@ -170,19 +169,7 @@ namespace Antmicro.Renode.Time
         /// <summary>
         /// Gets an enumerator over the part of handles collection - either not-ready-for-a-new-time-grant handles (if any) or ready ones (otherwise) returning objects of <see cref="LinkedListNode{TimeHandle}"/>.
         /// </summary>
-        public IEnumerable<LinkedListNode<TimeHandle>> WithLinkedListNode
-        {
-            get
-            {
-                var currentNode = (AreAllReadyForNewGrant ? ready : notReady).First;
-                while(currentNode != null)
-                {
-                    var next = currentNode.Next;
-                    yield return currentNode;
-                    currentNode = next;
-                }
-            }
-        }
+        public IEnumerable<LinkedListNode<TimeHandle>> WithLinkedListNode => (AreAllReadyForNewGrant ? ready : notReady).Nodes();
 
         /// <summary>
         /// Returns true if all handles in collection are in ready-for-a-new-grant state.
@@ -207,23 +194,19 @@ namespace Antmicro.Renode.Time
 
         private void InnerLatchAndCollectGarbage(ref bool wasLocked, LinkedList<TimeHandle> list)
         {
-            var current = list.First;
-            while(current != null)
+            foreach(var node in list.Nodes())
             {
-                var next = current.Next;
-                current.Value.Latch();
+                node.Value.Latch();
 
-                if(current.Value.DetachRequested)
+                if(node.Value.DetachRequested)
                 {
                     if(!wasLocked)
                     {
                         Monitor.Enter(locker, ref wasLocked);
                     }
-                    list.Remove(current);
-                    current.Value.Unlatch();
+                    list.Remove(node);
+                    node.Value.Unlatch();
                 }
-
-                current = next;
             }
         }
 
@@ -232,9 +215,9 @@ namespace Antmicro.Renode.Time
             var minTicks = ulong.MaxValue;
             var count = 0u;
 
-            for(var node = list.First; node is not null; node = node.Next)
+            foreach(var handle in list)
             {
-                var ticks = node.Value.TotalElapsedTime.Ticks;
+                var ticks = handle.TotalElapsedTime.Ticks;
 
                 if(ticks < minTicks)
                 {
