@@ -269,10 +269,10 @@ namespace Antmicro.Renode.Time
         public long NumberOfSyncPoints { get; private set; }
 
         /// <summary>
-        /// Gets the value representing current load, i.e., value indicating how much time the emulation spends sleeping in order to match the expected <see cref="Performance">.
+        /// Gets the value representing current load, i.e., value indicating how much time the emulation spends sleeping in order to match the expected performance.
         /// </summary>
         /// <remarks>
-        /// Value 1 means that there is no sleeping, i.e., it is not possible to execute faster. Value > 1 means that the execution is slower than expected. Value < 1 means that increasing <see cref="Performance"> will lead to faster execution.
+        /// Value 1 means that there is no sleeping, i.e., it is not possible to execute faster. Value > 1 means that the execution is slower than expected. Value < 1 means that time is spent idling; setting `PerformanceInMips` on a CPU could increase performance.
         /// This value is calculated as an average of 10 samples.
         /// </remarks>
         public double CurrentLoad { get { lock(hostTicksElapsed) { return hostTicksElapsed.AverageValue * 1.0 / virtualTicksElapsed.AverageValue; } } }
@@ -309,9 +309,6 @@ namespace Antmicro.Renode.Time
         /// <summary>
         /// Gets or sets flag indicating if the time flow should be slowed down to reflect real time or be as fast as possible.
         /// </summary>
-        /// <remarks>
-        /// Setting this flag to True has the same effect as setting <see cref="Performance"> to a very high value.
-        /// </remarks>
         public bool AdvanceImmediately { get; set; }
 
         public IEnumerable<ITimeSink> Sinks { get { using(sync.HighPriority) { return handles.Select(x => x.TimeSink); } } }
@@ -794,12 +791,12 @@ namespace Antmicro.Renode.Time
             NumberOfSyncPoints++;
         }
 
-        private TimeInterval elapsedAtLastUpdate;
-        private bool isBlocked;
-        private bool updateNearestSyncPoint;
+        private TimeInterval elapsedAtLastUpdate; // Executor-thread out-of-loop or inside `virtualTimeSyncLock` only
+        private bool isBlocked; // Executor-thread only
+        private bool updateNearestSyncPoint; // Executor-thread only
         private int? executeThreadId;
         private ulong delayedTaskId;
-        private uint virtualTimeProgressBlockers;
+        private uint virtualTimeProgressBlockers; // Executor-thread out-of-loop or inside `virtualTimeSyncLock` only
         private TimeInterval quantum;
 
         [Antmicro.Migrant.Constructor(true)]
