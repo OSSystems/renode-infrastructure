@@ -153,6 +153,8 @@ namespace Antmicro.Renode.Time
 #endif
                 // assigning TimeHandle to a sink must be done when everything is configured, otherwise a race condition might happen (dispatcher starts its execution when time source and handle are not yet ready)
                 sink.TimeHandle = handle;
+                // Resynchronise virtual time to update blocked count
+                SynchronizeVirtualTime();
             }
         }
 
@@ -368,70 +370,75 @@ namespace Antmicro.Renode.Time
         /// </returns>
         protected bool InnerExecute(out TimeInterval virtualTimeElapsed, TimeInterval? timeLimit = null)
         {
-            if(updateNearestSyncPoint)
-            {
-                NearestSyncPoint += timeLimit.HasValue ? TimeInterval.Min(timeLimit.Value, Quantum) : Quantum;
-                updateNearestSyncPoint = false;
-                this.Trace($"Updated NearestSyncPoint to: {NearestSyncPoint}");
-            }
-            DebugHelper.Assert(NearestSyncPoint.Ticks >= ElapsedVirtualTime.Ticks, $"Nearest sync point set in the past: EVT={ElapsedVirtualTime} NSP={NearestSyncPoint}");
-
-            isBlocked = false;
-            var quantum = NearestSyncPoint - ElapsedVirtualTime;
-            this.Trace($"Starting a loop with #{quantum.Ticks} ticks");
-
-            SynchronizeVirtualTime();
-            var elapsedVirtualTimeAtStart = ElapsedVirtualTime;
-
             using(sync.LowPriority)
             {
-                handles.LatchAllAndCollectGarbage();
-                var shouldGrantTime = handles.NotReady.Count == 0;
-                var activeHandles = shouldGrantTime ? handles.Ready : handles.NotReady;
-
-                this.Trace($"Iteration start: slaves left {activeHandles.Count}; will we try to grant time? {shouldGrantTime}");
-
-                if(activeHandles.Count > 0)
+                if(updateNearestSyncPoint)
                 {
-                    var executor = new PhaseExecutor<LinkedListNode<TimeHandle>>();
+                    NearestSyncPoint += timeLimit.HasValue ? TimeInterval.Min(timeLimit.Value, Quantum) : Quantum;
+                    updateNearestSyncPoint = false;
+                    this.Trace($"Updated NearestSyncPoint to: {NearestSyncPoint}");
+                }
+                DebugHelper.Assert(NearestSyncPoint.Ticks >= ElapsedVirtualTime.Ticks, $"Nearest sync point set in the past: EVT={ElapsedVirtualTime} NSP={NearestSyncPoint}");
 
-                    if(!shouldGrantTime)
-                    {
-                        if(ExecuteInSerial)
-                        {
-                            // We only test in serial execution to ensure determinism
-                            executor.RegisterTestPhase(ExecuteReadyForUnblockTestPhase);
-                        }
-                        executor.RegisterPhase(ExecuteUnblockPhase);
-                        executor.RegisterPhase(ExecuteWaitPhase);
-                    }
-                    else if(quantum != TimeInterval.Empty)
-                    {
-                        executor.RegisterPhase(s => ExecuteGrantPhase(s, quantum));
-                        executor.RegisterPhase(ExecuteWaitPhase);
-                    }
+                isBlocked = false;
+
+                // This is not revelant when we have blocked handles
+                var toRunFor = NearestSyncPoint - ElapsedVirtualTime;
+
+                var elapsedVirtualTimeAtStart = ElapsedVirtualTime;
+
+                handles.LatchAllAndCollectGarbage();
+
+                if(handles.NotReady.Count > 0)
+                {
+                    this.Trace($"Iteration start: unblocking {handles.NotReady.Count} handles");
+
+                    var executor = new PhaseExecutor<LinkedListNode<TimeHandle>>();
 
                     if(ExecuteInSerial)
                     {
-                        executor.ExecuteInSerial(activeHandles.Nodes());
+                        // We only test in serial execution to ensure determinism
+                        executor.RegisterTestPhase(ExecuteReadyForUnblockTestPhase);
                     }
-                    else
-                    {
-                        executor.ExecuteInParallel(activeHandles.Nodes());
-                    }
+                    executor.RegisterPhase(ExecuteUnblockPhase);
+                    executor.RegisterPhase(ExecuteWaitPhase);
+                    executor.Execute(handles.NotReady.Nodes(), ExecuteInSerial);
 
-                    SynchronizeVirtualTime();
                     virtualTimeElapsed = ElapsedVirtualTime - elapsedVirtualTimeAtStart;
+                }
+                else if(toRunFor == TimeInterval.Empty)
+                {
+                    virtualTimeElapsed = toRunFor;
+                }
+                else if(handles.Ready.Count > 0)
+                {
+                    this.Trace($"Iteration start: granting {handles.Ready.Count} handles {toRunFor} of time");
+
+                    var executor = new PhaseExecutor<LinkedListNode<TimeHandle>>();
+                    executor.RegisterPhase(s => ExecuteGrantPhase(s, toRunFor));
+                    executor.RegisterPhase(ExecuteWaitPhase);
+                    executor.Execute(handles.Ready.Nodes(), ExecuteInSerial);
+
+                    virtualTimeElapsed = ElapsedVirtualTime - elapsedVirtualTimeAtStart;
+                    DebugHelper.Assert(virtualTimeElapsed <= toRunFor, "Some handle ran for more time than allocated");
+
+                    var allTookAllTime = virtualTimeElapsed == toRunFor;
+
+                    DebugHelper.Assert(allTookAllTime || isBlocked, "Some handle did not consume all time despite no handles being blocked");
+                    // NOTE: The other unusual situation, `allTookAllTime && isBlocked`,
+                    // is not asserted against because it can happen if a handle blocks
+                    // with an empty remaining interval. This is explicitly tested in
+                    // `ShouldHandleBlockingAtTheEndOfGrantedInterval`
                 }
                 else
                 {
-                    this.Trace($"There are no slaves, updating VTE by {quantum.Ticks}");
+                    this.Trace($"There are no handles, updating VTE by {toRunFor}");
                     // if there are no slaves just make the time pass
-                    virtualTimeElapsed = quantum;
+                    virtualTimeElapsed = toRunFor;
 
-                    UpdateTime(quantum);
+                    UpdateTime(toRunFor);
                     // here we must trigger `TimePassed` manually as no handles has been updated so they won't reflect the passed time
-                    TimePassed?.Invoke(quantum);
+                    TimePassed?.Invoke(toRunFor);
                 }
 
                 handles.UnlatchAll();
@@ -652,26 +659,23 @@ namespace Antmicro.Renode.Time
 
         private void SynchronizeVirtualTime()
         {
-            lock(virtualTimeSyncLock)
+            if(!handles.TryGetCommonElapsedTime(out var currentCommonElapsedTime, out virtualTimeProgressBlockers))
             {
-                if(!handles.TryGetCommonElapsedTime(out var currentCommonElapsedTime, out virtualTimeProgressBlockers))
-                {
-                    return;
-                }
-
-                if(currentCommonElapsedTime == ElapsedVirtualTime)
-                {
-                    return;
-                }
-
-                DebugHelper.Assert(currentCommonElapsedTime > ElapsedVirtualTime, $"A slave reports time from the past! The current virtual time is {ElapsedVirtualTime}, but {currentCommonElapsedTime} has been reported");
-
-                var timeDiff = currentCommonElapsedTime - ElapsedVirtualTime;
-                this.Trace($"Reporting time passed: {timeDiff}");
-                // this will update ElapsedVirtualTime
-                UpdateTime(timeDiff);
-                TimePassed?.Invoke(timeDiff);
+                return;
             }
+
+            if(currentCommonElapsedTime == ElapsedVirtualTime)
+            {
+                return;
+            }
+
+            DebugHelper.Assert(currentCommonElapsedTime > ElapsedVirtualTime, $"A slave reports time from the past! The current virtual time is {ElapsedVirtualTime}, but {currentCommonElapsedTime} has been reported");
+
+            var timeDiff = currentCommonElapsedTime - ElapsedVirtualTime;
+            this.Trace($"Reporting time passed: {timeDiff}");
+            // this will update ElapsedVirtualTime
+            UpdateTime(timeDiff);
+            TimePassed?.Invoke(timeDiff);
         }
 
         private void UpdateTime(TimeInterval virtualTimeElapsed)
@@ -932,6 +936,18 @@ namespace Antmicro.Renode.Time
                     {
                         phase(target);
                     }
+                }
+            }
+
+            public void Execute(IEnumerable<T> targets, bool serial)
+            {
+                if(serial)
+                {
+                    ExecuteInSerial(targets);
+                }
+                else
+                {
+                    ExecuteInParallel(targets);
                 }
             }
 
