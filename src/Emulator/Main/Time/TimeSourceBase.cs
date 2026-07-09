@@ -311,7 +311,7 @@ namespace Antmicro.Renode.Time
         /// </summary>
         public bool AdvanceImmediately { get; set; }
 
-        public IEnumerable<ITimeSink> Sinks { get { using(sync.HighPriority) { return handles.Select(x => x.TimeSink); } } }
+        public IEnumerable<ITimeSink> Sinks { get { using(sync.HighPriority) { return handles.All.Select(x => x.TimeSink); } } }
 
         /// <see cref="ITimeSource.Domain">
         public abstract ITimeDomain Domain { get; }
@@ -386,11 +386,12 @@ namespace Antmicro.Renode.Time
             using(sync.LowPriority)
             {
                 handles.LatchAllAndCollectGarbage();
-                var shouldGrantTime = handles.AreAllReadyForNewGrant;
+                var shouldGrantTime = handles.NotReady.Count == 0;
+                var activeHandles = shouldGrantTime ? handles.Ready : handles.NotReady;
 
-                this.Trace($"Iteration start: slaves left {handles.ActiveCount}; will we try to grant time? {shouldGrantTime}");
+                this.Trace($"Iteration start: slaves left {activeHandles.Count}; will we try to grant time? {shouldGrantTime}");
 
-                if(handles.ActiveCount > 0)
+                if(activeHandles.Count > 0)
                 {
                     var executor = new PhaseExecutor<LinkedListNode<TimeHandle>>();
 
@@ -412,11 +413,11 @@ namespace Antmicro.Renode.Time
 
                     if(ExecuteInSerial)
                     {
-                        executor.ExecuteInSerial(handles.WithLinkedListNode);
+                        executor.ExecuteInSerial(activeHandles.Nodes());
                     }
                     else
                     {
-                        executor.ExecuteInParallel(handles.WithLinkedListNode);
+                        executor.ExecuteInParallel(activeHandles.Nodes());
                     }
 
                     SynchronizeVirtualTime();
