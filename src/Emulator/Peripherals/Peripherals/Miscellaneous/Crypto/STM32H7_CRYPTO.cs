@@ -281,13 +281,7 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous.Crypto
             currentMode = algorithmMode;
 
             algorithmState?.Dispose();
-
-            algorithmState = algorithmMode switch
-            {
-                AlgorithmMode.AES_ECB => new AesEcbState(this),
-                AlgorithmMode.AES_GCM => new RSA_GCM_State(this),
-                _ => null,
-            };
+            algorithmState = GetAlgorithm(algorithmMode);
 
             if(algorithmState == null)
             {
@@ -297,6 +291,41 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous.Crypto
                 );
             }
         }
+
+        private IAlgorithmState GetAlgorithm(AlgorithmMode mode) => mode switch
+        {
+            AlgorithmMode.AES_ECB => new AesState(
+                this,
+                (aes, buf) => aes.EncryptEcb(buf, buf, PaddingMode.None),
+                (aes, buf) => aes.DecryptEcb(buf, buf, PaddingMode.None)
+            ),
+            AlgorithmMode.AES_CBC => new AesState(
+                this,
+                (aes, buf) =>
+                {
+                    aes.EncryptCbc(buf, AesIV, buf, PaddingMode.None);
+                    AesIV = (byte[])buf.Clone();
+                },
+                (aes, buf) =>
+                {
+                    var iv = (byte[])buf.Clone();
+                    aes.DecryptCbc(buf, AesIV, buf, PaddingMode.None);
+                    AesIV = iv;
+                }
+            ),
+            AlgorithmMode.AES_CTR => new AesState(
+                this,
+                // CTR mode is symmetric, so `EncryptCtr` works both ways
+                (aes, buf) =>
+                {
+                    var nonce = AesIV;
+                    aes.EncryptCtr(buf, buf, nonce, 4);
+                    AesIV = nonce;
+                }
+            ),
+            AlgorithmMode.AES_GCM => new RSA_GCM_State(this),
+            _ => null,
+        };
 
         private bool DetectGCMWorkaround(AlgorithmMode newMode)
         {
@@ -328,6 +357,34 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous.Crypto
             .SelectMany(e => BitConverter.GetBytes(e))
             .Reverse()
             .ToArray();
+
+        private byte[] AesIV
+        {
+            get
+            {
+                return initialVectors
+                    .Select(ks => (uint)ks.Value)
+                    .Reverse()
+                    .SelectMany(e => BitConverter.GetBytes(e))
+                    .Reverse()
+                    .ToArray();
+            }
+
+            set
+            {
+                var vectors = value
+                    .Reverse()
+                    .Chunk(sizeof(uint))
+                    .Select(b => BitConverter.ToUInt32(b))
+                    .Reverse()
+                    .ToArray();
+
+                for(var idx = 0; idx < vectors.Length; idx += 1)
+                {
+                    initialVectors[idx].Value = vectors[idx];
+                }
+            }
+        }
 
         private bool IsEncryption => algorithmDirection.Value == false;
 
@@ -368,11 +425,13 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous.Crypto
         private const int AesBlockSizeInBytes = 128 / 8;
         private const int AesBlockSizeInWords = AesBlockSizeInBytes / 4;
 
-        private class AesEcbState : IAlgorithmState
+        private class AesState : IAlgorithmState
         {
-            public AesEcbState(STM32H7_CRYPTO parent)
+            public AesState(STM32H7_CRYPTO parent, Action<Aes, byte[]> encrypt, Action<Aes, byte[]> decrypt = null)
             {
                 this.parent = parent;
+                this.encrypt = encrypt;
+                this.decrypt = decrypt ?? encrypt;
                 aes = Aes.Create();
                 aes.Key = parent.AesKey;
             }
@@ -384,20 +443,14 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous.Crypto
 
             public void Process(uint value)
             {
+                var transform = parent.IsEncryption ? encrypt : decrypt;
                 var bytes = BitConverter.GetBytes(value).Reverse().ToArray();
                 foreach(var b in bytes)
                 {
                     buffer[bufferIdx++] = b;
                     if(bufferIdx == AesBlockSizeInBytes)
                     {
-                        if(parent.IsEncryption)
-                        {
-                            aes.EncryptEcb(buffer, buffer, PaddingMode.None);
-                        }
-                        else
-                        {
-                            aes.DecryptEcb(buffer, buffer, PaddingMode.None);
-                        }
+                        transform(aes, buffer);
                         parent.outputFIFO.EnqueueRange(STM32H7_CRYPTO.BytesToUIntAndSwapEndianness(buffer));
                         bufferIdx = 0;
                     }
@@ -408,6 +461,8 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous.Crypto
 
             private readonly Aes aes;
             private readonly STM32H7_CRYPTO parent;
+            private readonly Action<Aes, byte[]> encrypt;
+            private readonly Action<Aes, byte[]> decrypt;
             private readonly byte[] buffer = new byte[AesBlockSizeInBytes];
         }
 
@@ -434,7 +489,7 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous.Crypto
                     case GCMOrCCMPhase.Initialization:
                         InitializeInitializationPhase(
                             parent.AesKey,
-                            parent.initialVectors.Select(ks => (uint)ks.Value).Reverse().SelectMany(e => BitConverter.GetBytes(e)).Reverse().ToArray()
+                            parent.AesIV
                         );
                         // According to the docs:
                         // "This bit is automatically cleared by hardware when the key preparation process ends (ALGOMODE = 0111)
