@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2010-2024 Antmicro
+// Copyright (c) 2010-2026 Antmicro
 //
 // This file is licensed under the MIT License.
 // Full license text is available in 'licenses/MIT.txt'.
@@ -18,13 +18,20 @@ namespace Antmicro.Renode.Peripherals.CPU
         {
         }
 
-        public override string GetLLVMTriple(uint flags) => AllLLVMTriples[0];
+        public override string GetLLVMTriple(uint flags)
+        {
+            if(flags == 1)
+            {
+                return AllLLVMTriples[1];
+            }
+            return AllLLVMTriples[0];
+        }
 
         public override string Architecture { get { return "i386"; } }
 
         public override string GDBArchitecture { get { return Architecture; } }
 
-        public override string[] AllLLVMTriples => new[] { "i386" };
+        public override string[] AllLLVMTriples => new[] { "i386", "i386-unknown-none-code16" };
 
         // When no register features are passed, GDB will assume a default register layout, selected based on the architecture.
         // Such layout is enough to make our stub implementation working.

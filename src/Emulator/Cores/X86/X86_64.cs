@@ -18,13 +18,20 @@ namespace Antmicro.Renode.Peripherals.CPU
         {
         }
 
-        public override string GetLLVMTriple(uint flags) => AllLLVMTriples[0];
+        public override string GetLLVMTriple(uint flags)
+        {
+            if(flags == 1)
+            {
+                return AllLLVMTriples[1];
+            }
+            return AllLLVMTriples[0];
+        }
 
         public override string Architecture { get { return "x86_64"; } }
 
         public override string GDBArchitecture { get { return "i386:x86-64"; } }
 
-        public override string[] AllLLVMTriples => new[] { "x86_64" };
+        public override string[] AllLLVMTriples => new[] { "x86_64", "x86_64-unknown-none-code16" };
 
         public override List<GDBFeatureDescriptor> GDBFeatures
         {
