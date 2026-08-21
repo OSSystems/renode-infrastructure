@@ -446,6 +446,8 @@ namespace Antmicro.Renode.Peripherals.CPU
                 throw new RecoverableException("Assembler not available");
             }
 
+            triple ??= DetermineLLVMTriple(infer: false);
+
             // Instruction fetch access used as we want to be able to write even pages mapped for execution only
             // We don't care if translation fails here (the address is unchanged in this case)
             TryTranslateAddress(addr, MpuAccess.InstructionFetch, out addr);
@@ -686,9 +688,9 @@ namespace Antmicro.Renode.Peripherals.CPU
             {
                 throw new RecoverableException("Disassembly engine not available");
             }
-
             lock(executionLock)
             {
+                triple ??= DetermineLLVMTriple(infer: addr == ulong.MaxValue);
                 if(addr == ulong.MaxValue)
                 {
                     addr = PC;
@@ -2107,6 +2109,19 @@ namespace Antmicro.Renode.Peripherals.CPU
             {
                 return TlibTranslateToPhysicalAddress(logicalAddress, (uint)accessType);
             }
+        }
+
+        private string DetermineLLVMTriple(bool infer)
+        {
+            if(AllLLVMTriples.Length == 1)
+            {
+                return AllLLVMTriples[0];
+            }
+            if(!infer)
+            {
+                throw new RecoverableException($"Triple must be specified because this CPU supports more than one triple: {Misc.PrettyPrintCollection(AllLLVMTriples)}");
+            }
+            return GetLLVMTriple(DisassemblyFlags);
         }
 
         private IntPtr AtomicMemoryStatePointer =>

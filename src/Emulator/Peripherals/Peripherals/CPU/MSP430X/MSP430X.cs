@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2010-2025 Antmicro
+// Copyright (c) 2010-2026 Antmicro
 //
 // This file is licensed under the MIT License.
 // Full license text is available in 'licenses/MIT.txt'.
@@ -186,7 +186,7 @@ namespace Antmicro.Renode.Peripherals.CPU
             addr = addr ?? PC;
 
             var opcodes = Bus.ReadBytes(addr.Value, (int)blockSize, true, context: this);
-            disassembler.DisassembleBlock(addr.Value, opcodes, triple: null, alternateDialect: false, text: out var result);
+            disassembler.DisassembleBlock(addr.Value, opcodes, triple: AllLLVMTriples[0], alternateDialect: false, text: out var result);
             return result;
         }
 
@@ -197,7 +197,7 @@ namespace Antmicro.Renode.Peripherals.CPU
                 throw new RecoverableException("Assembler not available");
             }
 
-            var result = assembler.AssembleBlock(addr, instructions, triple: null, alternateDialect: false);
+            var result = assembler.AssembleBlock(addr, instructions, triple: AllLLVMTriples[0], alternateDialect: false);
             Bus.WriteBytes(result, addr, true, context: this);
             return (uint)result.Length;
         }

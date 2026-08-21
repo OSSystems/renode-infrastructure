@@ -22,14 +22,9 @@ namespace Antmicro.Renode.Peripherals.CPU.Disassembler
 {
     public class LLVMDisassembler
     {
-        public static void ValidateTriple(ICPUSupportingLLVMDisas cpu, ref string triple)
+        public static void ValidateTriple(ICPUSupportingLLVMDisas cpu, string triple)
         {
-            if(triple == null)
-            {
-                triple = cpu.AllLLVMTriples[0];
-                return;
-            }
-            if(Array.IndexOf(cpu.AllLLVMTriples, triple) == -1)
+            if(triple == null || Array.IndexOf(cpu.AllLLVMTriples, triple) == -1)
             {
                 throw new RecoverableException($"Invalid triple {triple} for CPU. Supported triples are: {String.Join(", ", cpu.AllLLVMTriples)}");
             }
@@ -98,7 +93,7 @@ namespace Antmicro.Renode.Peripherals.CPU.Disassembler
 
         private IFlaglessDisassembler GetDisassembler(string triple, bool alternateDialect)
         {
-            ValidateTriple(cpu, ref triple);
+            ValidateTriple(cpu, triple);
             var model = cpu.LLVMModel;
 
             var key = $"{triple} {model} {alternateDialect} {cpu.DisassemblyHexFormatting}";
