@@ -941,8 +941,9 @@ namespace Antmicro.Renode.Peripherals.CPU
             }
         }
 
-        // This value should only be read in CPU hooks (during execution of translated code).
-        public uint CurrentBlockDisassemblyFlags => TlibGetCurrentTbDisasFlags();
+        // This value can only be read safely from the CPU thread itself
+        // (including from C# callbacks), or when the CPU is not being executed
+        public uint DisassemblyFlags => TlibGetDisasFlags();
 
         public uint ExternalMmuWindowsCount => TlibGetMmuWindowsCount();
 
@@ -2238,7 +2239,7 @@ namespace Antmicro.Renode.Peripherals.CPU
         private readonly Action<uint> TlibSetInterruptBeginHookPresent;
 
         [Import]
-        private readonly Func<uint> TlibGetCurrentTbDisasFlags;
+        private readonly Func<uint> TlibGetDisasFlags;
 
         [Import]
         private readonly Action<ulong, ulong, uint> TlibSetMmuWindowEnd;
