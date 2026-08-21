@@ -388,7 +388,7 @@ namespace Antmicro.Renode.Peripherals.CPU
 
         public virtual void OnGPIO(int number, bool value)
         {
-            lock(lck)
+            lock(gpioLock)
             {
                 if(ThreadSentinelEnabled)
                 {
@@ -2405,8 +2405,7 @@ namespace Antmicro.Renode.Peripherals.CPU
 
         private readonly ConcurrentQueue<Action> actionsToExecuteOnCpuThread = new ConcurrentQueue<Action>();
 
-        // TODO
-        private readonly object lck = new object();
+        private readonly object gpioLock = new object();
         private readonly object executionLock = new object();
         private readonly MinimalRangesCollection mappedMemory = new MinimalRangesCollection();
         private readonly CpuThreadPauseGuard pauseGuard;
