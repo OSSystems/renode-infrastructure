@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2010-2023 Antmicro
+// Copyright (c) 2010-2026 Antmicro
 //
 // This file is licensed under the MIT License.
 // Full license text is available in 'licenses/MIT.txt'.
@@ -14,11 +14,10 @@ using Antmicro.Renode.Core.Structure.Registers;
 using Antmicro.Renode.Logging;
 using Antmicro.Renode.Peripherals.Bus;
 using Antmicro.Renode.Utilities;
-using Antmicro.Renode.Utilities.Crypto;
 
 namespace Antmicro.Renode.Peripherals.Miscellaneous
 {
-    public sealed class CC2538_Cryptoprocessor : IDoubleWordPeripheral, IKnownSize
+    public sealed class CC2538_Cryptoprocessor : IDoubleWordPeripheral, IKnownSize, IDisposable
     {
         public CC2538_Cryptoprocessor(IMachine machine)
         {
@@ -128,6 +127,11 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
 
             registers = new DoubleWordRegisterCollection(this, registersMap);
             Reset();
+        }
+
+        public void Dispose()
+        {
+            DisposeCcmMac();
         }
 
         public void Reset()
@@ -435,13 +439,16 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
             }
 
             var adataPresent = false;
-            if(ccmCbcMacAesProvider == null)
+            if(ccmMac == null)
             {
                 // this is a first ccm dma transfer;
                 // if it uses adata there will be a second one;
 
                 // CCM mode uses CBC-MAC for authentication;
-                ccmCbcMacAesProvider = AesProvider.GetCbcMacProvider(GetSelectedKey());
+                ccmMacAes = Aes.Create();
+                ccmMacAes.Mode = CipherMode.CBC;
+                ccmMac = ccmMacAes.CreateEncryptor(GetSelectedKey(), new byte[AesBlockSizeInBytes]);
+
                 DigestCcmMac(GenerateB0Block());
 
                 var adataBlock = GenerateFirstAdataBlock();
@@ -467,8 +474,8 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
                 if(aesOperationLength != length)
                 {
                     this.Log(LogLevel.Warning, "Message data detected, but aes operation length ({0}) is different than this transfer length ({1}). Aborting the transfer.", aesOperationLength, length);
-                    ccmCbcMacAesProvider.Dispose();
-                    ccmCbcMacAesProvider = null;
+                    ccmMac.Dispose();
+                    ccmMac = null;
                     return;
                 }
 
@@ -486,11 +493,10 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
 
             // calculate tag
             var s0Block = GenerateS0Block();
-            s0Block.AsSpan().Xor(ccmCbcMacAesProvider.LastBlock.Buffer);
+            s0Block.AsSpan().Xor(lastCcmMacBlock);
             Array.Copy(s0Block, tag, s0Block.Length);
 
-            ccmCbcMacAesProvider.Dispose();
-            ccmCbcMacAesProvider = null;
+            DisposeCcmMac();
         }
 
         private void HandleCcmEncryption(int length)
@@ -499,11 +505,7 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
             Misc.IncrementCtrCounter(inputVector, ToByteCount(counterWidth.Value));
             HandleCtr(length);
 
-            if(ccmCbcMacAesProvider != null)
-            {
-                ccmCbcMacAesProvider.Dispose();
-                ccmCbcMacAesProvider = null;
-            }
+            DisposeCcmMac();
         }
 
         private void HandleCcmDecryption(int length)
@@ -515,7 +517,7 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
             // decrypt in CTR mode
             HandleCtr(length);
 
-            if(ccmCbcMacAesProvider == null)
+            if(ccmMac == null)
             {
                 return;
             }
@@ -524,11 +526,10 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
             sysbus.ReadBytes(dmaInputAddress.Value, length, bytes, 0);
             DigestCcmMac(bytes);
             // calculate tag
-            s0Block.AsSpan().Xor(ccmCbcMacAesProvider.LastBlock.Buffer);
+            s0Block.AsSpan().Xor(lastCcmMacBlock);
             Array.Copy(s0Block, tag, s0Block.Length);
 
-            ccmCbcMacAesProvider.Dispose();
-            ccmCbcMacAesProvider = null;
+            DisposeCcmMac();
         }
 
         private byte[] GenerateB0Block()
@@ -624,10 +625,20 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
             {
                 throw new ArgumentException($"Data length must be a multiple of the AES block size {AesBlockSizeInBytes}B, was {data.Length}B");
             }
-            ccmCbcMacAesProvider.EncryptBlockInSitu(Block.UsingBytes(data));
+            ccmMac.TransformBlock(data, 0, data.Length, data, 0);
+            Array.Copy(data, data.Length - AesBlockSizeInBytes, lastCcmMacBlock, 0, AesBlockSizeInBytes);
         }
 
-        private AesProvider ccmCbcMacAesProvider;
+        private void DisposeCcmMac()
+        {
+            ccmMac?.Dispose();
+            ccmMac = null;
+            ccmMacAes?.Dispose();
+            ccmMacAes = null;
+        }
+
+        private Aes ccmMacAes;
+        private ICryptoTransform ccmMac;
         private bool dmaDoneInterrupt;
         private bool resultInterrupt;
         private bool keyStoreWriteErrorInterrupt;
@@ -636,6 +647,7 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
         private byte[] tag;
         private bool[] keyStoreWriteArea;
         private byte[][] keys;
+        private readonly byte[] lastCcmMacBlock = new byte[AesBlockSizeInBytes];
         private readonly IFlagRegisterField saveContext;
         private readonly IFlagRegisterField savedContextReady;
         private readonly IFlagRegisterField cbcEnabled;

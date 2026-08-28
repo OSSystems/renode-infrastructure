@@ -7,12 +7,12 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Cryptography;
 
 using Antmicro.Renode.Core;
 using Antmicro.Renode.Core.Structure.Registers;
 using Antmicro.Renode.Logging;
 using Antmicro.Renode.Utilities;
-using Antmicro.Renode.Utilities.Crypto;
 
 using Org.BouncyCastle.Crypto.Engines;
 using Org.BouncyCastle.Crypto.Modes;
@@ -373,12 +373,13 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous.Crypto
             public AesEcbState(STM32H7_CRYPTO parent)
             {
                 this.parent = parent;
-                aesProvider = AesProvider.GetEcbProvider(parent.AesKey);
+                aes = Aes.Create();
+                aes.Key = parent.AesKey;
             }
 
             public void Dispose()
             {
-                aesProvider.Dispose();
+                aes.Dispose();
             }
 
             public void Process(uint value)
@@ -389,24 +390,23 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous.Crypto
                     buffer[bufferIdx++] = b;
                     if(bufferIdx == AesBlockSizeInBytes)
                     {
-                        var block = Block.WithCopiedBytes(buffer);
-                        bufferIdx = 0;
                         if(parent.IsEncryption)
                         {
-                            aesProvider.EncryptBlockInSitu(block);
+                            aes.EncryptEcb(buffer, buffer, PaddingMode.None);
                         }
                         else
                         {
-                            aesProvider.DecryptBlockInSitu(block);
+                            aes.DecryptEcb(buffer, buffer, PaddingMode.None);
                         }
-                        parent.outputFIFO.EnqueueRange(STM32H7_CRYPTO.BytesToUIntAndSwapEndianness(block.Buffer));
+                        parent.outputFIFO.EnqueueRange(STM32H7_CRYPTO.BytesToUIntAndSwapEndianness(buffer));
+                        bufferIdx = 0;
                     }
                 }
             }
 
             private int bufferIdx = 0;
 
-            private readonly AesProvider aesProvider;
+            private readonly Aes aes;
             private readonly STM32H7_CRYPTO parent;
             private readonly byte[] buffer = new byte[AesBlockSizeInBytes];
         }

@@ -1,16 +1,16 @@
 //
-// Copyright (c) 2010-2025 Antmicro
+// Copyright (c) 2010-2026 Antmicro
 //
 // This file is licensed under the MIT License.
 // Full license text is available in 'licenses/MIT.txt'.
 //
 
 using System;
+using System.Security.Cryptography;
 
 using Antmicro.Renode.Core;
 using Antmicro.Renode.Core.Structure.Registers;
 using Antmicro.Renode.Logging;
-using Antmicro.Renode.Utilities.Crypto;
 
 namespace Antmicro.Renode.Peripherals.Miscellaneous
 {
@@ -78,15 +78,15 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
             this.Log(LogLevel.Debug, "Running the encryption process; key at 0x{0:X}, cleartext at 0x{1:X}", dataPointer.Value, dataPointer.Value + KeySize);
 
             var key = sysbus.ReadBytes(dataPointer.Value, KeySize);
-            var clearText = sysbus.ReadBytes(dataPointer.Value + KeySize, ClearTextSize);
-            var clearTextBlock = Block.UsingBytes(clearText);
+            var encryptionBuffer = sysbus.ReadBytes(dataPointer.Value + KeySize, ClearTextSize);
 
-            using(var aes = AesProvider.GetEcbProvider(key))
+            using(var aes = Aes.Create())
             {
-                aes.EncryptBlockInSitu(clearTextBlock);
+                aes.Key = key;
+                aes.EncryptEcb(encryptionBuffer, encryptionBuffer, PaddingMode.None);
             }
 
-            sysbus.WriteBytes(clearText, dataPointer.Value + KeySize + ClearTextSize);
+            sysbus.WriteBytes(encryptionBuffer, dataPointer.Value + KeySize + ClearTextSize);
         }
 
         private void UpdateInterrupts()
