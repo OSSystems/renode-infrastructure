@@ -468,14 +468,18 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
 
                 // CCM mode uses CBC-MAC for authentication;
                 ccmCbcMacAesProvider = AesProvider.GetCbcMacProvider(GetSelectedKey());
+                DigestCcmMac(GenerateB0Block());
 
-                ccmCbcMacAesProvider.EncryptBlockInSitu(GenerateB0Block());
                 var adataBlock = GenerateFirstAdataBlock();
                 if(adataBlock != null)
                 {
                     adataPresent = true;
+                    var bytes = new byte[(adataBlock.Length + length).AlignUpToMultipleOf(AesBlockSizeInBytes)];
+                    Array.Copy(adataBlock, 0, bytes, 0, adataBlock.Length);
                     // there is adata
-                    ProcessDataInMemory((uint)dmaInputAddress.Value, null, length, ccmCbcMacAesProvider.EncryptBlockInSitu, adataBlock);
+                    sysbus.ReadBytes(dmaInputAddress.Value, length, bytes, adataBlock.Length);
+                    DigestCcmMac(bytes);
+
                     if(aesOperationLength > 0)
                     {
                         // message data will be sent in a second dma transfer
@@ -501,11 +505,15 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
                 }
 
                 // this is the second transfer with message data
-                ProcessDataInMemory((uint)dmaInputAddress.Value, null, length, ccmCbcMacAesProvider.EncryptBlockInSitu);
+                var bytes = new byte[length.AlignUpToMultipleOf(AesBlockSizeInBytes)];
+                sysbus.ReadBytes(dmaInputAddress.Value, length, bytes, 0);
+                DigestCcmMac(bytes);
             }
 
             // calculate tag
-            GenerateS0Block().XorWith(ccmCbcMacAesProvider.LastBlock).CopyTo(tag);
+            var s0Block = GenerateS0Block();
+            s0Block.AsSpan().Xor(ccmCbcMacAesProvider.LastBlock.Buffer);
+            Array.Copy(s0Block, tag, s0Block.Length);
 
             ccmCbcMacAesProvider.Dispose();
             ccmCbcMacAesProvider = null;
@@ -533,43 +541,46 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
             // decrypt in CTR mode
             HandleCtr(length);
 
-            if(ccmCbcMacAesProvider != null)
+            if(ccmCbcMacAesProvider == null)
             {
-                // calculate authentication from decrypted data
-                ProcessDataInMemory((uint)dmaInputAddress.Value, null, length, ccmCbcMacAesProvider.EncryptBlockInSitu);
-                // calculate tag
-                s0Block.XorWith(ccmCbcMacAesProvider.LastBlock).CopyTo(tag);
-
-                ccmCbcMacAesProvider.Dispose();
-                ccmCbcMacAesProvider = null;
+                return;
             }
+            // calculate authentication from decrypted data
+            var bytes = new byte[length.AlignUpToMultipleOf(AesBlockSizeInBytes)];
+            sysbus.ReadBytes(dmaInputAddress.Value, length, bytes, 0);
+            DigestCcmMac(bytes);
+            // calculate tag
+            s0Block.AsSpan().Xor(ccmCbcMacAesProvider.LastBlock.Buffer);
+            Array.Copy(s0Block, tag, s0Block.Length);
+
+            ccmCbcMacAesProvider.Dispose();
+            ccmCbcMacAesProvider = null;
         }
 
-        private Block GenerateB0Block()
+        private byte[] GenerateB0Block()
         {
             const int aesAuthLengthOffset = 6;
             const int ccmLengthOfAuthenticationFieldOffset = 3;
 
-            var result = Block.OfSize(AesBlockSizeInBytes);
+            var result = new List<byte>(AesBlockSizeInBytes);
             // flags
             var flags = (byte)(((aesAuthLength.Value > 0 ? 1u : 0u) << aesAuthLengthOffset)
                 + ((uint)ccmLengthOfAuthenticationField.Value << ccmLengthOfAuthenticationFieldOffset)
                 + (uint)ccmLengthField.Value);
-            result.UpdateByte(flags);
+            result.Add(flags);
             // nonce
-            var nonceLength = 15 - (int)(ccmLengthField.Value + 1);
-            result.UpdateBytes(inputVector, 1, nonceLength);
+            result.AddRange(inputVector[1..^(int)ccmLengthField.Value]);
             // l(m) - fill LSB with aes operation length
-            while(result.SpaceLeft > 0)
+            while(result.Count < AesBlockSizeInBytes)
             {
-                result.UpdateByte(result.SpaceLeft > 4
+                result.Add(result.Count < AesBlockSizeInBytes - 4
                     ? (byte)0
-                    : (byte)((aesOperationLength >> ((result.SpaceLeft - 1) * 8)) & 0xff));
+                    : (byte)((aesOperationLength >> ((AesBlockSizeInBytes - result.Count - 1) * 8)) & 0xff));
             }
-            return result;
+            return result.ToArray();
         }
 
-        private Block GenerateFirstAdataBlock()
+        private byte[] GenerateFirstAdataBlock()
         {
             const int twoOctetsThreshold = (1 << 16) - (1 << 8);
 
@@ -578,42 +589,35 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
             {
                 return null;
             }
-
-            var result = Block.OfSize(AesBlockSizeInBytes);
-
             // encode a length
             if(aesAuthLength.Value < twoOctetsThreshold)
             {
                 // use two LSB of adataLength
-                result.UpdateByte((byte)(adataLength >> 8));
-                result.UpdateByte((byte)adataLength);
-            }
-            else
-            {
-                // those are just magic numbers required by RFC 3610
-                result.UpdateByte(0xff);
-                result.UpdateByte(0xfe);
-
-                // use four LSB of adataLength
-                result.UpdateByte((byte)(adataLength >> 24));
-                result.UpdateByte((byte)(adataLength >> 16));
-                result.UpdateByte((byte)(adataLength >> 8));
-                result.UpdateByte((byte)adataLength);
+                return [(byte)(adataLength >> 8), (byte)adataLength];
             }
             // standard allows for longer Adata fields, but we cannot express
             // them using 32-bit register architecture
-
-            return result;
+            return [
+                // those are just magic numbers required by RFC 3610
+                0xff,
+                0xfe,
+                // use four LSB of adataLength
+                (byte)(adataLength >> 24),
+                (byte)(adataLength >> 16),
+                (byte)(adataLength >> 8),
+                (byte)adataLength,
+            ];
         }
 
-        private Block GenerateS0Block()
+        private byte[] GenerateS0Block()
         {
-            var resultBlock = Block.WithCopiedBytes(inputVector);
-            using(var aesEcb = new AesProvider(CipherMode.ECB, PaddingMode.None, GetSelectedKey()))
+            var result = (byte[])inputVector.Clone();
+            using(var aes = Aes.Create())
             {
-                aesEcb.EncryptBlockInSitu(resultBlock);
+                aes.Key = GetSelectedKey();
+                aes.EncryptEcb(result, result, PaddingMode.None);
             }
-            return resultBlock;
+            return result;
         }
 
         private byte[] GetSelectedKey()
@@ -638,6 +642,15 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
             }
             Array.Copy(keys[selectedKey.Value], result, 16);
             return result;
+        }
+
+        private void DigestCcmMac(byte[] data)
+        {
+            if(data.Length % AesBlockSizeInBytes != 0)
+            {
+                throw new ArgumentException($"Data length must be a multiple of the AES block size {AesBlockSizeInBytes}B, was {data.Length}B");
+            }
+            ccmCbcMacAesProvider.EncryptBlockInSitu(Block.UsingBytes(data));
         }
 
         private AesProvider ccmCbcMacAesProvider;
