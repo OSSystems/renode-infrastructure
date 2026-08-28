@@ -686,9 +686,13 @@ namespace Antmicro.Renode.Peripherals.CPU
             {
                 throw new RecoverableException("Disassembly engine not available");
             }
-            if(addr == ulong.MaxValue)
+
+            lock(executionLock)
             {
-                addr = PC;
+                if(addr == ulong.MaxValue)
+                {
+                    addr = PC;
+                }
             }
 
             // Instruction fetch access used as we want to be able to read even pages mapped for execution only
