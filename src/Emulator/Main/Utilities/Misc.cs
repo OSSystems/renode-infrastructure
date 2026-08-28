@@ -1781,6 +1781,40 @@ namespace Antmicro.Renode.Utilities
             }
         }
 
+        public static void Xor(this Span<byte> dest, ReadOnlySpan<byte> operand)
+        {
+            if(dest.Length != operand.Length)
+            {
+                throw new ArgumentException("Destination and operand must be the same size");
+            }
+            for(var idx = 0; idx < dest.Length; idx += 1)
+            {
+                dest[idx] ^= operand[idx];
+            }
+        }
+
+        public static void EncryptCtr(this SymmetricAlgorithm algorithm, ReadOnlySpan<byte> plain, Span<byte> cypher, byte[] nonce, uint counterSize)
+        {
+            if(plain.Length != cypher.Length)
+            {
+                throw new ArgumentException("Plaintext and cyphertext spans must be the same size");
+            }
+            plain.CopyTo(cypher);
+            var pad = new byte[nonce.Length];
+            while(true)
+            {
+                algorithm.EncryptEcb(nonce, pad, PaddingMode.Zeros);
+                IncrementCtrCounter(nonce, counterSize);
+                if(cypher.Length <= pad.Length)
+                {
+                    cypher.Xor(pad[..cypher.Length]);
+                    break;
+                }
+                cypher[..pad.Length].Xor(pad);
+                cypher = cypher[pad.Length..];
+            }
+        }
+
         public static bool IsOnOsX
         {
             get

@@ -394,50 +394,62 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
                 return;
             }
 
-            using(var aes = AesProvider.GetCbcMacProvider(GetSelectedKey()))
+            var bytes = new byte[length.AlignUpToMultipleOf(AesBlockSizeInBytes)];
+            sysbus.ReadBytes(dmaInputAddress.Value, length, bytes, 0);
+            using(var aes = Aes.Create())
             {
-                ProcessDataInMemory((uint)dmaInputAddress.Value, null, length, aes.EncryptBlockInSitu);
-                aes.LastBlock.CopyTo(tag);
+                aes.Key = GetSelectedKey();
+                aes.EncryptCbc(bytes, inputVector, bytes, PaddingMode.None);
             }
+            // We only care about the last block
+            Array.Copy(bytes, bytes.Length - AesBlockSizeInBytes, tag, 0, AesBlockSizeInBytes);
         }
 
         private void HandleCtr(int length)
         {
-            var ivBlock = Block.UsingBytes(inputVector);
-            var encryptedNonceCounterBlock = Block.OfSize(AesBlockSizeInBytes);
-            using(var aes = AesProvider.GetEcbProvider(GetSelectedKey()))
+            var bytes = sysbus.ReadBytes(dmaInputAddress.Value, length);
+            using(var aes = Aes.Create())
             {
-                ProcessDataInMemory((uint)dmaInputAddress.Value, (uint)dmaOutputAddress.Value, length, b =>
-                {
-                    aes.EncryptBlock(ivBlock, encryptedNonceCounterBlock);
-                    b.XorWith(encryptedNonceCounterBlock);
-                    Misc.IncrementCtrCounter(ivBlock.Buffer, ToByteCount(counterWidth.Value));
-                });
+                aes.Key = GetSelectedKey();
+                aes.EncryptCtr(bytes, bytes, inputVector, ToByteCount(counterWidth.Value));
             }
+            sysbus.WriteBytes(bytes, dmaOutputAddress.Value);
         }
 
         private void HandleEcb(int length)
         {
-            using(var aes = AesProvider.GetEcbProvider(GetSelectedKey()))
+            var bytes = sysbus.ReadBytes(dmaInputAddress.Value, length);
+            using(var aes = Aes.Create())
             {
-                var processor = direction.Value == Direction.Encryption
-                    ? (Action<Block>)aes.EncryptBlockInSitu
-                    : aes.DecryptBlockInSitu;
-
-                ProcessDataInMemory((uint)dmaInputAddress.Value, (uint)dmaOutputAddress.Value, length, processor);
+                aes.Key = GetSelectedKey();
+                if(direction.Value == Direction.Encryption)
+                {
+                    aes.EncryptEcb(bytes, bytes, PaddingMode.Zeros);
+                }
+                else
+                {
+                    aes.DecryptEcb(bytes, bytes, PaddingMode.Zeros);
+                }
             }
+            sysbus.WriteBytes(bytes, dmaOutputAddress.Value);
         }
 
         private void HandleCbc(int length)
         {
-            using(var aes = AesProvider.GetCbcProvider(GetSelectedKey(), inputVector))
+            var bytes = sysbus.ReadBytes(dmaInputAddress.Value, length);
+            using(var aes = Aes.Create())
             {
-                var processor = direction.Value == Direction.Encryption
-                    ? (Action<Block>)aes.EncryptBlockInSitu
-                    : aes.DecryptBlockInSitu;
-
-                ProcessDataInMemory((uint)dmaInputAddress.Value, (uint)dmaOutputAddress.Value, length, processor);
+                aes.Key = GetSelectedKey();
+                if(direction.Value == Direction.Encryption)
+                {
+                    aes.EncryptCbc(bytes, inputVector, bytes, PaddingMode.Zeros);
+                }
+                else
+                {
+                    aes.DecryptCbc(bytes, inputVector, bytes, PaddingMode.Zeros);
+                }
             }
+            sysbus.WriteBytes(bytes, dmaOutputAddress.Value);
         }
 
         private void HandleCcmAuthentication(int length)
