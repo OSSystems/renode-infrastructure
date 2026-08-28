@@ -190,32 +190,6 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
             }
         }
 
-        private void ProcessDataInMemory(uint inputAddress, uint? outputAddress, int length, Action<Block> processor, Block data = null)
-        {
-            SysbusWriter writer = null;
-            var reader = new SysbusReader(sysbus, inputAddress, length);
-            if(outputAddress.HasValue)
-            {
-                writer = new SysbusWriter(sysbus, outputAddress.Value, length);
-            }
-
-            if(data == null)
-            {
-                data = Block.OfSize(AesBlockSizeInBytes);
-            }
-            while(!reader.IsFinished)
-            {
-                reader.Read(data);
-                data.PadSpaceLeft(0);
-                processor(data);
-                if(writer != null)
-                {
-                    writer.Write(data.Buffer);
-                }
-                data.Index = 0;
-            }
-        }
-
         private void DoInputTransfer(int length)
         {
             if(!dmaInputChannelEnabled.Value)
@@ -690,54 +664,6 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
         private const int NumberOfKeys = 8;
         private const int KeyEntrySizeInBytes = 16;
         private const int AesBlockSizeInBytes = 16;
-
-        private class SysbusReader : SysbusReaderWriterBase
-        {
-            public SysbusReader(IBusController bus, ulong startAddress, int length) : base(bus, startAddress, length)
-            {
-            }
-
-            public int Read(Block destination)
-            {
-                var bytesToRead = Math.Min(bytesLeft, destination.SpaceLeft);
-                bus.ReadBytes(currentAddress, bytesToRead, destination.Buffer, destination.Index);
-                destination.Index += bytesToRead;
-                currentAddress += (ulong)bytesToRead;
-                bytesLeft -= bytesToRead;
-                return bytesToRead;
-            }
-        }
-
-        private class SysbusWriter : SysbusReaderWriterBase
-        {
-            public SysbusWriter(IBusController bus, ulong startAddress, int length) : base(bus, startAddress, length)
-            {
-            }
-
-            public void Write(byte[] bytes)
-            {
-                var length = Math.Min(bytesLeft, bytes.Length);
-                bus.WriteBytes(bytes, currentAddress, length);
-                currentAddress += (ulong)length;
-                bytesLeft -= length;
-            }
-        }
-
-        private abstract class SysbusReaderWriterBase
-        {
-            public bool IsFinished { get { return bytesLeft == 0; } }
-
-            protected SysbusReaderWriterBase(IBusController bus, ulong startAddress, int length)
-            {
-                this.bus = bus;
-                currentAddress = startAddress;
-                bytesLeft = length;
-            }
-
-            protected ulong currentAddress;
-            protected int bytesLeft;
-            protected readonly IBusController bus;
-        }
 
         private enum Registers : uint
         {
