@@ -14,6 +14,7 @@ using System.Linq;
 using System.Numerics;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -1760,6 +1761,24 @@ namespace Antmicro.Renode.Utilities
             var mre = new ManualResetEventSlim();
             func(mre.Set);
             mre.Wait(token);
+        }
+
+        // Just a big-endian increment on the last `counterSize` bytes of the `nonce`
+        public static void IncrementCtrCounter(byte[] nonce, uint counterSize)
+        {
+            if(counterSize > nonce.Length)
+            {
+                throw new ArgumentException("Counter size must not be greater than the size of the whole nonce");
+            }
+            // Starting from one because ^0 indexes one past the last item
+            for(var idx = 1; idx <= counterSize; idx += 1)
+            {
+                var newValue = unchecked(nonce[^idx] += 1);
+                if(newValue != 0)
+                {
+                    break;
+                }
+            }
         }
 
         public static bool IsOnOsX

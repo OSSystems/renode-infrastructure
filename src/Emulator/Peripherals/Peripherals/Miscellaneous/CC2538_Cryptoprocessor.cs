@@ -167,18 +167,14 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
 
         public GPIO Interrupt { get; private set; }
 
-        private static void IncrementCounter(byte[] buffer, int counterWidth)
+        private static uint ToByteCount(CounterWidth width) => width switch
         {
-            // This is just a manual increment of integer value stored in `counterWidth` LSB bytes of a buffer.
-            // It must be ensured that in case of an overflow the rest of a buffer is not modified.
-            for(int i = 0; i < (counterWidth + 1) * 4; i++)
-            {
-                if(unchecked(++buffer[buffer.Length - i - 1]) != 0)
-                {
-                    break;
-                }
-            }
-        }
+            CounterWidth.Bits32 => 4,
+            CounterWidth.Bits64 => 8,
+            CounterWidth.Bits96 => 12,
+            CounterWidth.Bits128 => 16,
+            _ => throw new ArgumentOutOfRangeException()
+        };
 
         private void RefreshInterrupts()
         {
@@ -415,7 +411,7 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
                 {
                     aes.EncryptBlock(ivBlock, encryptedNonceCounterBlock);
                     b.XorWith(encryptedNonceCounterBlock);
-                    IncrementCounter(ivBlock.Buffer, (int)counterWidth.Value);
+                    Misc.IncrementCtrCounter(ivBlock.Buffer, ToByteCount(counterWidth.Value));
                 });
             }
         }
@@ -506,7 +502,7 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
         private void HandleCcmEncryption(int length)
         {
             // first, we increment a counter
-            IncrementCounter(inputVector, (int)counterWidth.Value);
+            Misc.IncrementCtrCounter(inputVector, ToByteCount(counterWidth.Value));
             HandleCtr(length);
 
             if(ccmCbcMacAesProvider != null)
@@ -521,7 +517,7 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
             // calculate s0 block before changing the counter (and input vector)
             var s0Block = GenerateS0Block();
             // first, increment a counter
-            IncrementCounter(inputVector, (int)counterWidth.Value);
+            Misc.IncrementCtrCounter(inputVector, ToByteCount(counterWidth.Value));
             // decrypt in CTR mode
             HandleCtr(length);
 
