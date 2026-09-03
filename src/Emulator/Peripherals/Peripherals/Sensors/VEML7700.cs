@@ -40,6 +40,9 @@ namespace Antmicro.Renode.Peripherals.Sensors
             return result;
         }
 
+        // Writes to VEML7700 can be in two forms: a single address byte to set
+        // the address for a read, or three bytes, where the first byte is the
+        // address and the other two are the value to write to that address
         public void Write(byte[] data)
         {
             if(data.Length == 1)
@@ -53,7 +56,8 @@ namespace Antmicro.Renode.Peripherals.Sensors
                 this.WarningLog("Written {0} bytes when expecting 3", data.Length);
                 if(data.Length == 0) return;
             }
-            var value = BitHelper.ToUInt16(data, 0, true);
+            // data[0] is the address byte, so we read the value from 1
+            var value = BitHelper.ToUInt16(data, index: 1, reverse: true);
             RegistersCollection.Write(data[0], value);
         }
 
