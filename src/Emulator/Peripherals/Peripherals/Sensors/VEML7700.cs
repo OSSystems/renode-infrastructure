@@ -117,6 +117,17 @@ namespace Antmicro.Renode.Peripherals.Sensors
         // Whether to report an alternate device ID on command 7
         public bool AlternateDeviceId { get; set; }
 
+        private static int IntegrationTimeToIndex(IntegrationTime time) => time switch
+        {
+            IntegrationTime.Time25ms => 0,
+            IntegrationTime.Time50ms => 1,
+            IntegrationTime.Time100ms => 2,
+            IntegrationTime.Time200ms => 3,
+            IntegrationTime.Time400ms => 4,
+            IntegrationTime.Time800ms => 5,
+            _ => InvalidIntegrationTimeIndex
+        };
+
         private void DefineRegisters()
         {
             Registers.Configuration.Define(this, 1)
@@ -131,7 +142,14 @@ namespace Antmicro.Renode.Peripherals.Sensors
                 .WithFlag(1, out interruptRegister, name: "Interrupt register enable (ALS_INT_EN)")
                 .WithReservedBits(2, 2)
                 .WithTag("Interrupt persistence (ALS_PERS)", 4, 2)
-                .WithEnumField<WordRegister, IntegrationTime>(6, 4, out integrationTimeRegister, name: "Integration time (ALS_IT)")
+                .WithEnumField<WordRegister, IntegrationTime>(6, 4, out integrationTimeRegister, writeCallback: (oldValue, newValue) =>
+                {
+                    if(IntegrationTimeToIndex(newValue) == InvalidIntegrationTimeIndex)
+                    {
+                        this.WarningLog("Invalid value {0} was passed as integration time", newValue);
+                        integrationTimeRegister.Value = oldValue;
+                    }
+                }, name: "Integration time (ALS_IT)")
                 .WithReservedBits(10, 1)
                 .WithEnumField<WordRegister, Gain>(11, 2, out gainRegister, name: "Gain (ALS_GAIN)")
                 .WithReservedBits(13, 2);
@@ -165,7 +183,7 @@ namespace Antmicro.Renode.Peripherals.Sensors
 
         private ushort ScaleSample(decimal value)
         {
-            var coefficient = luxCoefficients[(int)gainRegister.Value][(int)integrationTimeRegister.Value];
+            var coefficient = luxCoefficients[(int)gainRegister.Value][IntegrationTimeToIndex(integrationTimeRegister.Value)];
             var result = Math.Round(value / coefficient);
             return (ushort)Math.Min(result, ushort.MaxValue);
         }
@@ -203,6 +221,7 @@ namespace Antmicro.Renode.Peripherals.Sensors
         private const byte SlaveCode = 0xc4;
         private const byte SlaveCodeAlt = 0xd4;
         private const byte DeviceID = 0x81;
+        private const int InvalidIntegrationTimeIndex = -1;
 
         public enum Gain
         {
