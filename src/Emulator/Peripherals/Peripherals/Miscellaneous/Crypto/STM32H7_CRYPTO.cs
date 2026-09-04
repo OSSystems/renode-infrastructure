@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2010-2025 Antmicro
+// Copyright (c) 2010-2026 Antmicro
 //
 // This file is licensed under the MIT License.
 // Full license text is available in 'licenses/MIT.txt'.
@@ -20,17 +20,23 @@ using Org.BouncyCastle.Crypto.Parameters;
 
 namespace Antmicro.Renode.Peripherals.Miscellaneous.Crypto
 {
-    public class STM32H7_CRYPTO : BasicDoubleWordPeripheral, IKnownSize
+    public class STM32H7_CRYPTO : BasicDoubleWordPeripheral, IKnownSize, IDisposable
     {
         public STM32H7_CRYPTO(IMachine machine) : base(machine)
         {
             DefineRegisters();
         }
 
+        public void Dispose()
+        {
+            algorithmState?.Dispose();
+        }
+
         public override void Reset()
         {
             inputFIFO.Clear();
             outputFIFO.Clear();
+            algorithmState?.Dispose();
             algorithmState = null;
             // `currentMode` doesn't have to be reset
 
@@ -254,6 +260,8 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous.Crypto
                 return;
             }
 
+            algorithmState?.Dispose();
+
             switch(algorithmMode)
             {
             case AlgorithmMode.AES_key_prepare_EBC_CBC:
@@ -362,6 +370,11 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous.Crypto
                 this.parent = parent;
             }
 
+            public override void Dispose()
+            {
+                aesProvider?.Dispose();
+            }
+
             public override void InitializePhase()
             {
                 aesProvider = AesProvider.GetEcbProvider(parent.AesKey);
@@ -402,6 +415,9 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous.Crypto
             {
                 this.parent = parent;
             }
+
+            public override void Dispose()
+            { }
 
             public override void InitializePhase()
             {
@@ -608,8 +624,10 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous.Crypto
             private const int MacSizeInBytes = AesBlockSizeInBytes;
         }
 
-        private abstract class AlgorithmState
+        private abstract class AlgorithmState : IDisposable
         {
+            public abstract void Dispose();
+
             public abstract void InitializePhase();
 
             // Feed data from input FIFO
