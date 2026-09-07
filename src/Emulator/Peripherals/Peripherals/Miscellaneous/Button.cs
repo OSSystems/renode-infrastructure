@@ -6,6 +6,7 @@
 // Full license text is available in 'licenses/MIT.txt'.
 //
 using System;
+using System.Collections.Generic;
 
 using Antmicro.Renode.Core;
 using Antmicro.Renode.Time;
@@ -13,7 +14,7 @@ using Antmicro.Renode.Utilities;
 
 namespace Antmicro.Renode.Peripherals.Miscellaneous
 {
-    public class Button : IPeripheral, IGPIOSender
+    public class Button : IPeripheral, IGPIOSender, INumberedGPIOOutput
     {
         // Registration address ('gpio 3' in the example below) has no influence on the button's logic.
         // It's just a way to inform the peripherals tree ('peripherals' command) how the button is
@@ -26,6 +27,10 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
             ReleaseOnReset = true;
             Inverted = invert;
             IRQ = new GPIO();
+            Connections = new Dictionary<int, IGPIO>()
+            {
+                {0, IRQ}
+            };
 
             Reset();
         }
@@ -84,6 +89,8 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
         public bool ReleaseOnReset { get; set; }
 
         public GPIO IRQ { get; }
+
+        public IReadOnlyDictionary<int, IGPIO> Connections { get; }
 
         public event Action<bool> StateChanged;
 
