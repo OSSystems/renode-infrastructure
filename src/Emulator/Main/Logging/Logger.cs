@@ -806,6 +806,7 @@ namespace Antmicro.Renode.Logging
                 WriteLogEntryToBackends(lastLoggedEntry);
 
                 repeatLogEntryCount = 0;
+                lastLoggedEntry = null;
 
                 // reset timer
                 logAggregatorTimer?.Change(MaxAggregateTimeMs, MaxAggregateTimeMs);
