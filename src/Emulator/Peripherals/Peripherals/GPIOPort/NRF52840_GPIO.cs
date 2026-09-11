@@ -262,7 +262,7 @@ namespace Antmicro.Renode.Peripherals.GPIOPort
 
                     Parent.NoisyLog("Setting pin {0} input to {1}", Id, value);
                     Parent.State[Id] = value;
-                    Parent.PinChanged(this, value);
+                    Parent.PinChanged?.Invoke(this, value);
                     Parent.UpdateDetect();
                 }
             }
