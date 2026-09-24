@@ -9,8 +9,7 @@ diff --git a/src/Emulator/Peripherals/Peripherals/Analog/STM32G0_ADC.cs b/src/Em
 +++ b/src/Emulator/Peripherals/Peripherals/Analog/STM32G0_ADC.cs
 @@ @@
  //
--// Copyright (c) 2010-2026 Antmicro
-+// Copyright (c) 2010-2024 Antmicro
+ // Copyright (c) 2010-2026 Antmicro
 +// Copyright (c) 2023-2025 OS Systems
  //
  // This file is licensed under the MIT License.

@@ -4,6 +4,8 @@ Subject: [PATCH] [GH#414] Analog: Add STM32L0 ADC driver
 
 Signed-off-by: Gerson Fernando Budke <gerson.budke@ossystems.com.br>
 
+Ported to Renode v1.17.0 STM32_ADC_Common API.
+
 diff --git a/src/Emulator/Peripherals/Peripherals/Analog/STM32L0_ADC.cs b/src/Emulator/Peripherals/Peripherals/Analog/STM32L0_ADC.cs
 new file mode 100644
 --- /dev/null
@@ -40,8 +42,18 @@ new file mode 100644
 +                hasVbatPin: false,
 +                hasChannelSelect: true,
 +                hasChannelSequence: false,
-+                hasPowerRegister: true
++                hasPowerRegister: true,
++                hasOffset: false,
++                hasDifferentialMode: false,
++                samplingTime: SamplingTime.OneForAll,
++                dualMode: false,
++                hasLinearityCalibration: false,
++                hasChannelInjection: false,
++                hasSeparateThresholdRegisters: false,
++                resolutionRange: ResolutionRange.Bits6_12,
++                hasChannelPreselection: false,
++                hasScanDirection: true
 +            )
-+        {}
++        { }
 +    }
 +}

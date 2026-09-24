@@ -7,28 +7,19 @@ bits to match with the number of channels.
 
 Signed-off-by: Gerson Fernando Budke <gerson.budke@ossystems.com.br>
 
+Ported to Renode v1.17.0 STM32_ADC_Common API.
+Upstream already sizes AWDxCH by the channel count; only the reserved
+bits width is fixed so that bit 31 is covered as well.
+
 diff --git a/src/Emulator/Peripherals/Peripherals/Analog/STM32_ADC_Common.cs b/src/Emulator/Peripherals/Peripherals/Analog/STM32_ADC_Common.cs
 --- a/src/Emulator/Peripherals/Peripherals/Analog/STM32_ADC_Common.cs
 +++ b/src/Emulator/Peripherals/Peripherals/Analog/STM32_ADC_Common.cs
-@@ @@ private Dictionary<long, DoubleWordRegister> BuildRegistersMap(bool hasCalibrati
-                     .WithValueField(16, 12, out analogWatchdogHighValues[1], name: "HT")
-                     .WithReservedBits(28, 4));
-                 registers.Add((long)Registers.Watchdog2Configuration, new DoubleWordRegister(this)
--                    .WithFlags(0, 14, out analogWatchdog2SelectedChannels, name: "AWD2CH")
--                    .WithReservedBits(14, 18));
-+                    .WithFlags(0, ChannelCount, out analogWatchdog2SelectedChannels, name: "AWD2CH")
-+                    .WithReservedBits(ChannelCount, 32 - ChannelCount));
+@@ @@ private void BuildWatchdogRegisters(Dictionary<long, DoubleWordRegister> registe
+                 {
+                     registers.Add((long)GetConfigurationRegister(i), new DoubleWordRegister(this)
+                         .WithFlags(0, ADCChannelCount, out var selectedChannels, name: $"AWD{i + 1}CH")
+-                        .WithReservedBits(ADCChannelCount, 31 - ADCChannelCount));
++                        .WithReservedBits(ADCChannelCount, 32 - ADCChannelCount));
+                     analogWatchdogSelectedChannels.Add(i, selectedChannels);
+                 }
              }
-             if(WatchdogCount == 3)
-             {
-@@ @@ private Dictionary<long, DoubleWordRegister> BuildRegistersMap(bool hasCalibrati
-                     .WithValueField(16, 12, out analogWatchdogHighValues[2], name: "HT")
-                     .WithReservedBits(28, 4));
-                 registers.Add((long)Registers.Watchdog3Configuration, new DoubleWordRegister(this)
--                    .WithFlags(0, 14, out analogWatchdog3SelectedChannels, name: "AWD3CH")
--                    .WithReservedBits(14, 18));
-+                    .WithFlags(0, ChannelCount, out analogWatchdog3SelectedChannels, name: "AWD3CH")
-+                    .WithReservedBits(ChannelCount, 32 - ChannelCount));
-             }
- 
-             if(hasCalibration)

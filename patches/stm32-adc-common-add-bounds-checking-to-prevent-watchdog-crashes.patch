@@ -9,26 +9,34 @@ multiple watchdogs with invalid channel states.
 
 Signed-off-by: Gerson Fernando Budke <gerson.budke@ossystems.com.br>
 
+Ported to Renode v1.17.0 STM32_ADC_Common API.
+An invalid channel read from the regular sequence now logs a warning and
+finishes the sequence (EOS set), matching the original intent.
+
 diff --git a/src/Emulator/Peripherals/Peripherals/Analog/STM32_ADC_Common.cs b/src/Emulator/Peripherals/Peripherals/Analog/STM32_ADC_Common.cs
 --- a/src/Emulator/Peripherals/Peripherals/Analog/STM32_ADC_Common.cs
 +++ b/src/Emulator/Peripherals/Peripherals/Analog/STM32_ADC_Common.cs
-@@ @@ private void SendDmaRequest()
+@@ @@ private void WarnOnTooBigValue(int channel, double mv)
              }
          }
  
 +        private bool IsCurrentChannelValid()
 +        {
-+            return currentChannel >= 0 && currentChannel < ChannelCount;
++            return currentChannel >= 0 && currentChannel < ADCChannelCount;
 +        }
 +
+         private void WarnOnCurrentChannelNotPreselected()
+         {
+-            if(hasChannelPreselection && !preselectedChannels[currentChannel].Value)
++            if(hasChannelPreselection && IsCurrentChannelValid() && !preselectedChannels[currentChannel].Value)
+             {
+                 this.Log(LogLevel.Warning, "Channel {0} is not preselected", currentChannel);
+             }
+@@ @@ private void SendDmaRequest()
+ 
          private bool WatchdogEnabled(int watchdogNumber)
          {
-+            if(watchdogNumber < 0 || watchdogNumber >= WatchdogCount)
-+            {
-+                return false;
-+            }
-+
-+            if(!IsCurrentChannelValid())
++            if(watchdogNumber < 0 || watchdogNumber >= WatchdogCount || !IsCurrentChannelValid())
 +            {
 +                return false;
 +            }
@@ -36,83 +44,72 @@ diff --git a/src/Emulator/Peripherals/Peripherals/Analog/STM32_ADC_Common.cs b/s
              switch(watchdogNumber)
              {
              case 0:
-                 var enabledOnAll = !analogWatchdogSingleChannel.Value;
+@@ @@ private bool WatchdogEnabled(int watchdogNumber)
                  var enabledOnCurrent = enabledOnAll || (int)analogWatchdogChannel.Value == currentChannel;
                  return analogWatchdogEnable.Value && enabledOnCurrent;
--            case 1:
--                return analogWatchdog2SelectedChannels[currentChannel].Value;
--            case 2:
--                return analogWatchdog3SelectedChannels[currentChannel].Value;
-+             case 1:
-+                return analogWatchdog2SelectedChannels != null &&
-+                    currentChannel < analogWatchdog2SelectedChannels.Length &&
-+                    analogWatchdog2SelectedChannels[currentChannel].Value;
-+             case 2:
-+
-+                return analogWatchdog3SelectedChannels != null &&
-+                    currentChannel < analogWatchdog3SelectedChannels.Length &&
-+                    analogWatchdog3SelectedChannels[currentChannel].Value;
+             default:
+-                return analogWatchdogSelectedChannels[watchdogNumber][currentChannel].Value;
++                return analogWatchdogSelectedChannels.TryGetValue(watchdogNumber, out var selectedChannels)
++                    && currentChannel < selectedChannels.Length
++                    && selectedChannels[currentChannel].Value;
              }
-             throw new UnreachableException("Watchdog count is checked in the constructor");
          }
+ 
 @@ @@ private void SampleNextChannel()
-             Func<bool> iterationFinished = null;
+                 return;
+             }
+ 
++            if(sequenceInProgress && !IsCurrentChannelValid())
++            {
++                this.Log(LogLevel.Warning, "Invalid channel {0} in sequence, finishing sequence", currentChannel);
++                FinishSequence();
++            }
++
+             if(sequenceInProgress)
+             {
+                 uint sample = GetSampleFromChannel(currentChannel);
+@@ @@ private void SwitchToNextActiveChannel()
+             if(iterationFinished)
+             {
+                 this.Log(LogLevel.Debug, "No more channels enabled");
+-                endOfSequenceFlag.Value = true;
+-                sequenceCounter = 0;
+-                startFlag.Value = false;
+-                sequenceInProgress = false;
++                FinishSequence();
+             }
+         }
+ 
++        private void FinishSequence()
++        {
++            endOfSequenceFlag.Value = true;
++            sequenceCounter = 0;
++            startFlag.Value = false;
++            sequenceInProgress = false;
++        }
++
+         private bool SwitchToNextChannel()
+         {
              if(hasChannelSelect)
-             {
--                iterationFinished = () => currentChannel >= ChannelCount;
-+                iterationFinished = () => currentChannel >= ChannelCount || currentChannel < 0;
-             }
+@@ @@ private bool SwitchToNextChannel()
              else
              {
--                iterationFinished = () => sequenceCounter > (int)regularSequenceLength.Value;
-+                iterationFinished = () => sequenceCounter > (int)regularSequenceLength.Value || sequenceCounter < 0;
-             }
- 
--            while(!iterationFinished() && currentChannel >= 0)
-+            while(!iterationFinished() && IsCurrentChannelValid())
-             {
-                 if(hasChannelSelect && !channelSelected[currentChannel])
-                 {
-@@ @@ private void SampleNextChannel()
-                     return;
-                 }
-             }
+                 sequenceCounter = (scanDirection == ScanDirection.Ascending) ? sequenceCounter + 1 : sequenceCounter - 1;
+-                if(sequenceCounter >= 0 && sequenceCounter <= (int)regularSequenceLength.Value)
++                if(sequenceCounter < 0 || sequenceCounter > (int)regularSequenceLength.Value)
++                {
++                    return true;
++                }
 +
-             this.Log(LogLevel.Debug, "No more channels enabled");
-             endOfSequenceFlag.Value = true;
-             sequenceInProgress = false;
-             sequenceCounter = 0;
-+            currentChannel = 0;
-             UpdateInterrupts();
-             startFlag.Value = false;
- 
-@@ @@ private void SwitchToNextChannel()
-             else
-             {
-                 sequenceCounter = (scanDirection.Value == ScanDirection.Ascending) ? sequenceCounter + 1 : sequenceCounter - 1;
--                // NOTE: Sequence finishes when `sequenceCounter` is either greater than `regularSequenceLength` or less than `0`.
--                // In both of those cases, we assume that at this point `currentChannel` will contain invalid value.
-+
-+                // Only update currentChannel if sequenceCounter is within valid range
-                 if(sequenceCounter >= 0 && sequenceCounter <= (int)regularSequenceLength.Value)
++                currentChannel = (int)regularSequence[sequenceCounter].Value;
++                if(!IsCurrentChannelValid())
                  {
 -                    currentChannel = (int)regularSequence[sequenceCounter].Value;
-+                    var newChannel = (int)regularSequence[sequenceCounter].Value;
-+
-+                    // Validate the channel from sequence before assigning
-+                    if(newChannel >= 0 && newChannel < ChannelCount)
-+                    {
-+                        currentChannel = newChannel;
-+                    }
-+                    else
-+                    {
-+                        this.Log(LogLevel.Warning, "Invalid channel {0} in sequence position {1}", newChannel, sequenceCounter);
-+                        currentChannel = -1; // Mark as invalid
-+                    }
-+                }
-+                else
-+                {
-+                    currentChannel = -1; // Mark as invalid when sequence is finished
++                    this.Log(LogLevel.Warning, "Invalid channel {0} in sequence position {1}", currentChannel, sequenceCounter);
++                    return true;
                  }
+-                return sequenceCounter > (int)regularSequenceLength.Value || sequenceCounter < 0 || currentChannel < 0;
++                return false;
              }
          }
+ 

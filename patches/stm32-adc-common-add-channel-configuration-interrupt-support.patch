@@ -4,64 +4,63 @@ Subject: [PATCH] STM32_ADC_Common: Add channel configuration interrupt support
 
 Signed-off-by: Gerson Fernando Budke <gerson.budke@ossystems.com.br>
 
+Ported to Renode v1.17.0 STM32_ADC_Common API.
+
 diff --git a/src/Emulator/Peripherals/Peripherals/Analog/STM32_ADC_Common.cs b/src/Emulator/Peripherals/Peripherals/Analog/STM32_ADC_Common.cs
 --- a/src/Emulator/Peripherals/Peripherals/Analog/STM32_ADC_Common.cs
 +++ b/src/Emulator/Peripherals/Peripherals/Analog/STM32_ADC_Common.cs
 @@ @@ public STM32_ADC_Common(IMachine machine, double referenceVoltage, uint external
-             ChannelCount = channelCount.Value;
-             WatchdogCount = watchdogCount.Value;
-             this.hasChannelSelect = hasChannelSelect.Value;
-+            this.hasChannelSequence = hasChannelSequence.Value;
- 
-             if(WatchdogCount < 1 || WatchdogCount > 3)
-             {
-@@ @@ private void WarnOnTooBigValue(double mv)
+             WatchdogCount = watchdogCount;
+             this.hasChannelSelect = hasChannelSelect;
+             this.hasCalibration = hasCalibration;
++            // Channel configuration ready flag (CCRDY) is only present on ADCs with both CHSELR and configurable sequencer (e.g. C0/G0/WBA)
++            this.hasChannelConfigurationReady = hasChannelSequence && hasChannelSelect;
+             this.hasChannelInjection = hasChannelInjection;
+             this.resolutionRange = resolutionRange;
+             this.hasChannelPreselection = hasChannelPreselection;
+@@ @@ private void WarnOnCurrentChannelNotPreselected()
              }
          }
  
-+        private void UpdateChannelConfig()
++        private void UpdateChannelConfiguration()
 +        {
-+            if(this.hasChannelSequence)
++            if(hasChannelConfigurationReady)
 +            {
-+                endOfChannelConfigFlag.Value = true;
++                channelConfigurationReadyFlag.Value = true;
 +                UpdateInterrupts();
 +            }
 +        }
 +
          private void UpdateInterrupts()
          {
-             var adcReady = adcReadyFlag.Value && adcReadyInterruptEnable.Value;
+             var irq = false;
 @@ @@ private void UpdateInterrupts()
-             var endOfSequence = endOfSequenceFlag.Value && endOfSequenceInterruptEnable.Value;
-             var overrun = adcOverrunFlag.Value && adcOverrunInterruptEnable.Value;
-             var endOfCalibration = endOfCalibrationFlag.Value && endOfCalibrationInterruptEnable.Value;
-+            var endOfChannelConfig = false;
- 
--            IRQ.Set(adcReady || analogWatchdog || endOfSampling || endOfConversion || endOfSequence || overrun|| endOfCalibration);
-+            if(this.hasChannelSequence)
+             {
+                 irq |= endOfCalibrationFlag.Value && endOfCalibrationInterruptEnable.Value;
+             }
++            if(hasChannelConfigurationReady)
 +            {
-+                endOfChannelConfig = endOfChannelConfigFlag.Value && endOfChannelConfigInterruptEnable.Value;
++                irq |= channelConfigurationReadyFlag.Value && channelConfigurationReadyInterruptEnable.Value;
 +            }
-+
-+            IRQ.Set(adcReady || analogWatchdog || endOfSampling || endOfConversion || endOfSequence || overrun || endOfCalibration || endOfChannelConfig);
+             IRQ.Set(irq);
          }
  
-         private void StartSampling()
 @@ @@ private Dictionary<long, DoubleWordRegister> BuildRegistersMap(bool hasCalibrati
-                 .WithReservedBits(5, 2)
+                 .WithFlag(4, out adcOverrunFlag, FieldMode.Read | FieldMode.WriteOneToClear, name: "OVR")
                  .WithFlags(7, WatchdogCount, out analogWatchdogFlags, FieldMode.Read | FieldMode.WriteOneToClear, name: "AWD")
-                 .WithReservedBits(7 + WatchdogCount, 4 - WatchdogCount)
--                .WithReservedBits(13, 19);
-+                .WithReservedBits(14, 18);
+                 .WithReservedBits(7 + WatchdogCount, 3 - WatchdogCount)
+-                .WithReservedBits(13, 19)
++                // Bits 11-13 are defined below
++                .WithReservedBits(14, 18)
+                 .WithWriteCallback((_, __) => UpdateInterrupts());
  
              var interruptEnableRegister = new DoubleWordRegister(this)
-                 .WithFlag(0, out adcReadyInterruptEnable, name: "ADRDYIE")
 @@ @@ private Dictionary<long, DoubleWordRegister> BuildRegistersMap(bool hasCalibrati
-                 .WithReservedBits(5, 2)
+                 .WithFlag(4, out adcOverrunInterruptEnable, name: "OVRIE")
                  .WithFlags(7, WatchdogCount, out analogWatchdogsInterruptEnable, name: "AWDIE")
-                 .WithReservedBits(7 + WatchdogCount, 4 - WatchdogCount)
+                 .WithReservedBits(7 + WatchdogCount, 3 - WatchdogCount)
 -                .WithReservedBits(13, 19)
-+                // 11~13 defined below
++                // Bits 11-13 are defined below
 +                .WithReservedBits(14, 18)
                  .WithWriteCallback((_, __) => UpdateInterrupts());
  
@@ -70,12 +69,12 @@ diff --git a/src/Emulator/Peripherals/Peripherals/Analog/STM32_ADC_Common.cs b/s
                      .WithReservedBits(11, 2);
              }
  
-+            if(this.hasChannelSequence)
++            if(hasChannelConfigurationReady)
 +            {
 +                isrRegister
-+                    .WithFlag(13, out endOfChannelConfigFlag, FieldMode.Read | FieldMode.WriteOneToClear, name: "CCRDY");
++                    .WithFlag(13, out channelConfigurationReadyFlag, FieldMode.Read | FieldMode.WriteOneToClear, name: "CCRDY");
 +                interruptEnableRegister
-+                    .WithFlag(13, out endOfChannelConfigInterruptEnable, name: "CCRDYIE");
++                    .WithFlag(13, out channelConfigurationReadyInterruptEnable, name: "CCRDYIE");
 +            }
 +            else
 +            {
@@ -85,70 +84,49 @@ diff --git a/src/Emulator/Peripherals/Peripherals/Analog/STM32_ADC_Common.cs b/s
 +                    .WithReservedBits(13, 1);
 +            }
 +
-             var configurationRegister1 = new DoubleWordRegister(this)
-                 .WithFlag(0, out dmaEnabled, name: "DMAEN")
-                 .WithFlag(1, writeCallback: (_, val) =>
-@@ @@ private Dictionary<long, DoubleWordRegister> BuildRegistersMap(bool hasCalibrati
-                         }
-                     }, name: "DMACFG")
-                 // When fully configurable channel sequencer is available, the SCANDIR and RES fields are swapped
--                .WithEnumField<DoubleWordRegister, ScanDirection>(hasChannelSequence ? 4 : 2, 1, out scanDirection, name: "SCANDIR")
--                .WithEnumField<DoubleWordRegister, Resolution>(hasChannelSequence ? 2 : 3, 2, out resolution, name: "RES")
-+                .WithEnumField<DoubleWordRegister, ScanDirection>(this.hasChannelSequence ? 4 : 2, 1, out scanDirection, writeCallback: (_, __) =>
-+                    {
-+                        UpdateChannelConfig();
-+                    }, name: "SCANDIR")
-+                .WithEnumField<DoubleWordRegister, Resolution>(this.hasChannelSequence ? 2 : 3, 2, out resolution, name: "RES")
-                 .WithEnumField<DoubleWordRegister, Align>(5, 1, out align, name: "ALIGN")
-                 .WithTag("EXTSEL", 6, 3)
-                 .WithReservedBits(9, 1)
-@@ @@ private Dictionary<long, DoubleWordRegister> BuildRegistersMap(bool hasCalibrati
- 
-             var regularSequence1 = new DoubleWordRegister(this);
- 
--            if(hasChannelSequence)
-+            if(this.hasChannelSequence)
+             if(hasChannelInjection)
              {
-                 if(hasChannelSelect)
+                 isrRegister
+@@ @@ private Dictionary<long, DoubleWordRegister> BuildRegistersMap(bool hasCalibrati
+                 if(!hasChannelInjection)
                  {
                      configurationRegister1
 -                        .WithFlag(21, name: "CHSELRMOD"); // no actual logic, but software expects to read the value back
-+                    .WithFlag(21, valueProviderCallback: _ => false,  writeCallback: (_, __) =>
-+                        {
-+                            UpdateChannelConfig();
-+                        }, name: "CHSELRMOD");
++                        // no actual logic, but software expects to read the value back
++                        .WithFlag(21, writeCallback: (_, __) => UpdateChannelConfiguration(), name: "CHSELRMOD");
                  }
-                 else
-                 {
+             }
+             else
+@@ @@ private Dictionary<long, DoubleWordRegister> BuildRegistersMap(bool hasCalibrati
+                     .WithEnumField<DoubleWordRegister, ScanDirection>(hasChannelSequence ? 4 : 2, 1, writeCallback: (_, val) =>
+                         {
+                             scanDirection = val;
++                            UpdateChannelConfiguration();
+                         }, name: "SCANDIR");
+             }
+             else
 @@ @@ private Dictionary<long, DoubleWordRegister> BuildRegistersMap(bool hasCalibrati
                             valueProviderCallback: (id, __) => channelSelected[id],
                             writeCallback: (id, _, val) => { this.Log(LogLevel.Debug, "Channel {0} enable set as {1}", id, val); channelSelected[id] = val; })
-                     .WithReservedBits(ChannelCount, 32 - ChannelCount)
-+                    .WithWriteCallback((_, __) => UpdateChannelConfig())
+                     .WithReservedBits(ADCChannelCount, 32 - ADCChannelCount)
++                    .WithWriteCallback((_, __) => UpdateChannelConfiguration())
                  );
              }
  
-@@ @@ private void BuildSampingTimeRegisters(Dictionary<long, DoubleWordRegister> regi
-         private IFlagRegisterField endOfCalibrationInterruptEnable;
-         private IFlagRegisterField endOfSamplingInterruptEnable;
-         private IFlagRegisterField endOfConversionInterruptEnable;
-+        private IFlagRegisterField endOfChannelConfigInterruptEnable;
-         private IFlagRegisterField[] analogWatchdogsInterruptEnable;
-         private IFlagRegisterField adcReadyInterruptEnable;
+@@ @@ private ushort ResolutionToBits(Resolution resolution)
          private IFlagRegisterField adcOverrunInterruptEnable;
-@@ @@ private void BuildSampingTimeRegisters(Dictionary<long, DoubleWordRegister> regi
          private IFlagRegisterField endOfSequenceFlag;
          private IFlagRegisterField endOfCalibrationFlag;
++        private IFlagRegisterField channelConfigurationReadyFlag;
++        private IFlagRegisterField channelConfigurationReadyInterruptEnable;
          private IFlagRegisterField endOfConversionFlag;
-+        private IFlagRegisterField endOfChannelConfigFlag;
          private IFlagRegisterField[] analogWatchdogFlags;
          private IFlagRegisterField adcReadyFlag;
-         private IFlagRegisterField adcRegulatorEnable;
-@@ @@ private void BuildSampingTimeRegisters(Dictionary<long, DoubleWordRegister> regi
-         private bool externalTrigger;
-         private bool sequenceInProgress;
-         private bool awaitingConversion;
-+        private bool hasChannelSequence;
-         private readonly bool[] channelSelected;
-         private readonly IValueRegisterField[] analogWatchdogHighValues;
-         private readonly IValueRegisterField[] analogWatchdogLowValues;
+@@ @@ private ushort ResolutionToBits(Resolution resolution)
+         private readonly int dmaChannel;
+         private readonly bool hasChannelSelect;
+         private readonly bool hasCalibration;
++        private readonly bool hasChannelConfigurationReady;
+         private readonly ResolutionRange resolutionRange;
+         private readonly bool hasChannelPreselection;
+         private readonly uint externalEventFrequency;

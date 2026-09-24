@@ -8,20 +8,30 @@ calibration procedure and allow ADC driver to work.
 
 Signed-off-by: Gerson Fernando Budke <gerson.budke@ossystems.com.br>
 
+Ported to Renode v1.17.0 STM32_ADC_Common API.
+
 diff --git a/src/Emulator/Peripherals/Peripherals/Analog/STM32_ADC_Common.cs b/src/Emulator/Peripherals/Peripherals/Analog/STM32_ADC_Common.cs
 --- a/src/Emulator/Peripherals/Peripherals/Analog/STM32_ADC_Common.cs
 +++ b/src/Emulator/Peripherals/Peripherals/Analog/STM32_ADC_Common.cs
+@@ @@ public STM32_ADC_Common(IMachine machine, double referenceVoltage, uint external
+             ADCChannelCount = channelCount;
+             WatchdogCount = watchdogCount;
+             this.hasChannelSelect = hasChannelSelect;
++            this.hasCalibration = hasCalibration;
+             this.hasChannelInjection = hasChannelInjection;
+             this.resolutionRange = resolutionRange;
+             this.hasChannelPreselection = hasChannelPreselection;
 @@ @@ private void UpdateInterrupts()
-             var endOfConversion = endOfConversionFlag.Value && endOfConversionInterruptEnable.Value;
-             var endOfSequence = endOfSequenceFlag.Value && endOfSequenceInterruptEnable.Value;
-             var overrun = adcOverrunFlag.Value && adcOverrunInterruptEnable.Value;
-+            var endOfCalibration = endOfCalibrationFlag.Value && endOfCalibrationInterruptEnable.Value;
- 
--            IRQ.Set(adcReady || analogWatchdog || endOfSampling || endOfConversion || endOfSequence || overrun);
-+            IRQ.Set(adcReady || analogWatchdog || endOfSampling || endOfConversion || endOfSequence || overrun|| endOfCalibration);
+                 irq |= endOfConversionInjectedFlag.Value && endOfConversionInjectedInterruptEnable.Value;
+                 irq |= endOfSequenceInjectedFlag.Value && endOfSequenceInjectedInterruptEnable.Value;
+             }
++            if(hasCalibration)
++            {
++                irq |= endOfCalibrationFlag.Value && endOfCalibrationInterruptEnable.Value;
++            }
+             IRQ.Set(irq);
          }
  
-         private void StartSampling()
 @@ @@ private Dictionary<long, DoubleWordRegister> BuildRegistersMap(bool hasCalibrati
              if(hasCalibration)
              {
@@ -37,18 +47,18 @@ diff --git a/src/Emulator/Peripherals/Peripherals/Analog/STM32_ADC_Common.cs b/s
              }
              else
 @@ @@ private Dictionary<long, DoubleWordRegister> BuildRegistersMap(bool hasCalibrati
-                     .WithReservedBits(5, 23)
+                         }, name: "ADSTP")
                      .WithFlag(28, out adcRegulatorEnable, name: "ADVREGEN")
                      .WithReservedBits(29, 2)
--                    .WithTaggedFlag("ADCAL", 31)
+-                    .WithTaggedFlag("ADCAL", 31);
 +                    .WithFlag(31, valueProviderCallback: _ => false, writeCallback: (_, __) =>
 +                        {
 +                            UpdateInterrupts();
-+                        }, name: "ADCAL")
-                 },
-                 {(long)Registers.Configuration1, configurationRegister1},
-                 {(long)Registers.Configuration2, configurationRegister2},
-@@ @@ private void BuildSampingTimeRegisters(Dictionary<long, DoubleWordRegister> regi
++                        }, name: "ADCAL");
+ 
+             if(hasLinearityCalibration)
+             {
+@@ @@ private ushort ResolutionToBits(Resolution resolution)
          private IValueRegisterField data;
          private IFlagRegisterField analogWatchdogSingleChannel;
          private IFlagRegisterField endOfSequenceInterruptEnable;
@@ -56,11 +66,18 @@ diff --git a/src/Emulator/Peripherals/Peripherals/Analog/STM32_ADC_Common.cs b/s
          private IFlagRegisterField endOfSamplingInterruptEnable;
          private IFlagRegisterField endOfConversionInterruptEnable;
          private IFlagRegisterField[] analogWatchdogsInterruptEnable;
-@@ @@ private void BuildSampingTimeRegisters(Dictionary<long, DoubleWordRegister> regi
+         private IFlagRegisterField adcReadyInterruptEnable;
          private IFlagRegisterField adcOverrunInterruptEnable;
-         private IFlagRegisterField[] analogWatchdog3SelectedChannels;
          private IFlagRegisterField endOfSequenceFlag;
 +        private IFlagRegisterField endOfCalibrationFlag;
          private IFlagRegisterField endOfConversionFlag;
          private IFlagRegisterField[] analogWatchdogFlags;
          private IFlagRegisterField adcReadyFlag;
+@@ @@ private ushort ResolutionToBits(Resolution resolution)
+         private readonly IDMA dma;
+         private readonly int dmaChannel;
+         private readonly bool hasChannelSelect;
++        private readonly bool hasCalibration;
+         private readonly ResolutionRange resolutionRange;
+         private readonly bool hasChannelPreselection;
+         private readonly uint externalEventFrequency;

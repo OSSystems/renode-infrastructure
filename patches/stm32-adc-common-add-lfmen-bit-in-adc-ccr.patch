@@ -8,7 +8,7 @@ diff --git a/src/Emulator/Peripherals/Peripherals/Analog/STM32_ADC_Common.cs b/s
 --- a/src/Emulator/Peripherals/Peripherals/Analog/STM32_ADC_Common.cs
 +++ b/src/Emulator/Peripherals/Peripherals/Analog/STM32_ADC_Common.cs
 @@ @@ private Dictionary<long, DoubleWordRegister> BuildRegistersMap(bool hasCalibrati
-                 .WithReservedBits(0, 18)
+                 .WithValueField(16, 2, name: "CKMODE") // no actual logic, since we do not handle clock in this model
                  .WithTaggedFlag("VREFEN", 22)
                  .WithTaggedFlag("TSEN", 23)
 -                .WithReservedBits(25, 7);
