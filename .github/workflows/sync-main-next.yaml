@@ -1,0 +1,123 @@
+name: "Sync main-ossystems-next"
+
+# Daily:
+#   1. Mirror upstream (renode/renode-infrastructure) master -> origin master.
+#   2. Cherry-pick the OSSystems patches (the commits on main-ossystems past
+#      the upstream fork point) on top of the freshly-synced master.
+#   3. If every patch applies cleanly -> force-push the rebuilt integration
+#      branch (main-ossystems-next) and drop any stale broken branch.
+#   4. If a patch conflicts -> park the partial rebase on a single sync-broken
+#      branch (replaced on each consecutive failure) and leave
+#      main-ossystems-next and main-ossystems untouched.
+
+on:
+  schedule:
+    # Daily at 04:00 UTC (01:00 BRT).
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.repository }}-sync-main-next
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main-ossystems (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main-ossystems
+
+      - name: Configure git and fetch refs
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/renode/renode-infrastructure.git
+          git fetch --no-tags upstream master
+          git fetch --no-tags origin master main-ossystems main-ossystems-next \
+            || git fetch --no-tags origin master main-ossystems
+
+      - name: Sync master from upstream (fast-forward mirror)
+        run: |
+          set -euo pipefail
+          # master is a pure mirror of upstream/master: fast-forward only, no
+          # --force. A non-fast-forward push fails loudly (master diverged).
+          git push origin upstream/master:refs/heads/master
+          echo "master synced to $(git rev-parse --short upstream/master)"
+
+      - name: Rebuild candidate (rebase OSSystems patches onto upstream)
+        id: build
+        run: |
+          set -euo pipefail
+
+          # Fork point = where main-ossystems branched from upstream. It stays
+          # fixed because main-ossystems is never rewritten, so this is the
+          # exact set of OSSystems patches to replay.
+          FORK=$(git merge-base origin/main-ossystems upstream/master)
+          echo "Fork point: $FORK"
+
+          git checkout -B sync-candidate upstream/master
+
+          FAILED_SHA=""
+          for sha in $(git rev-list --reverse "$FORK..origin/main-ossystems"); do
+            if git cherry-pick -x "$sha"; then
+              continue
+            fi
+            # The pick did not auto-apply. Tell 'already upstream' (becomes
+            # empty) apart from a genuine conflict.
+            if git diff --quiet && git diff --cached --quiet; then
+              git cherry-pick --skip
+              continue
+            fi
+            FAILED_SHA="$sha"
+            git cherry-pick --abort
+            break
+          done
+
+          echo "candidate_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+          if [ -n "$FAILED_SHA" ]; then
+            echo "outcome=conflict" >> "$GITHUB_OUTPUT"
+            echo "failed_sha=$FAILED_SHA" >> "$GITHUB_OUTPUT"
+            echo "::warning::cherry-pick conflict on ${FAILED_SHA} $(git log -1 --format=%s "$FAILED_SHA")"
+            exit 0
+          fi
+
+          # All patches applied. Promote only if the result actually differs
+          # from the current integration branch (avoids no-op force-pushes).
+          if git rev-parse --verify -q origin/main-ossystems-next >/dev/null \
+             && git diff --quiet sync-candidate origin/main-ossystems-next; then
+            echo "outcome=nochange" >> "$GITHUB_OUTPUT"
+            echo "main-ossystems-next already up to date"
+          else
+            echo "outcome=clean" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Promote candidate to main-ossystems-next
+        if: steps.build.outputs.outcome == 'clean'
+        run: |
+          set -euo pipefail
+          git push origin sync-candidate:refs/heads/main-ossystems-next --force
+          git push origin --delete sync-broken || true
+          echo "main-ossystems-next updated to ${{ steps.build.outputs.candidate_sha }}"
+
+      - name: Quarantine broken rebase
+        if: steps.build.outputs.outcome == 'conflict'
+        run: |
+          set -euo pipefail
+          # HEAD = upstream + the cleanly-applied patches (the conflicting pick
+          # was aborted). Add a marker commit so the failure is self-evident,
+          # then replace the single broken branch. main-ossystems-next and
+          # main-ossystems are left untouched.
+          FAILED_SHA="${{ steps.build.outputs.failed_sha }}"
+          git commit --allow-empty \
+            -m "CONFLICT: cherry-pick stopped at ${FAILED_SHA} $(git log -1 --format=%s "$FAILED_SHA")"
+          git push origin sync-candidate:refs/heads/sync-broken --force
+          echo "::error::Rebase failed at ${FAILED_SHA} — parked on sync-broken; main-ossystems-next untouched"
+          exit 1
