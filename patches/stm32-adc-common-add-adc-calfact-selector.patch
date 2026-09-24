@@ -1,0 +1,138 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Gerson Fernando Budke <gerson.budke@ossystems.com.br>
+Subject: [PATCH] [GH#414] STM32_ADC_Common: Add ADC_CALFACT selector
+
+The STM32_ADC_Common define the 0xC4 address for ADC_CALFACT register.
+This is only valid for the most advanced version of adc peripheral
+which is not compatible with the low cost devices like C0/G0/L0. This
+add a selector at class instanciation to allow the correct definition
+of the address.
+
+Signed-off-by: Gerson Fernando Budke <gerson.budke@ossystems.com.br>
+
+diff --git a/src/Emulator/Peripherals/Peripherals/Analog/STM32F0_ADC.cs b/src/Emulator/Peripherals/Peripherals/Analog/STM32F0_ADC.cs
+--- a/src/Emulator/Peripherals/Peripherals/Analog/STM32F0_ADC.cs
++++ b/src/Emulator/Peripherals/Peripherals/Analog/STM32F0_ADC.cs
+@@ @@ public STM32F0_ADC(IMachine machine, double referenceVoltage, uint externalEvent
+                 // Base class configuration
+                 watchdogCount: 1,
+                 hasCalibration: false,
++                hasHighCalAddress: false,
+                 channelCount: 19,
+                 hasPrescaler: false,
+                 hasVbatPin: true,
+diff --git a/src/Emulator/Peripherals/Peripherals/Analog/STM32F3_ADC.cs b/src/Emulator/Peripherals/Peripherals/Analog/STM32F3_ADC.cs
+--- a/src/Emulator/Peripherals/Peripherals/Analog/STM32F3_ADC.cs
++++ b/src/Emulator/Peripherals/Peripherals/Analog/STM32F3_ADC.cs
+@@ @@ public STM32F3_ADC(IMachine machine, double referenceVoltage, uint externalEvent
+                 // Base class configuration
+                 watchdogCount: 3,
+                 hasCalibration: true,
++                hasHighCalAddress: false,
+                 channelCount: 19,
+                 hasPrescaler: true,
+                 hasVbatPin: false,
+diff --git a/src/Emulator/Peripherals/Peripherals/Analog/STM32G0_ADC.cs b/src/Emulator/Peripherals/Peripherals/Analog/STM32G0_ADC.cs
+--- a/src/Emulator/Peripherals/Peripherals/Analog/STM32G0_ADC.cs
++++ b/src/Emulator/Peripherals/Peripherals/Analog/STM32G0_ADC.cs
+@@ @@ public STM32G0_ADC(IMachine machine, double referenceVoltage, uint externalEvent
+                 // Base class configuration
+                 watchdogCount: 3,
+                 hasCalibration: true,
++                hasHighCalAddress: false,
+                 channelCount: 19,
+                 hasPrescaler: true,
+                 hasVbatPin: true,
+diff --git a/src/Emulator/Peripherals/Peripherals/Analog/STM32L5_ADC.cs b/src/Emulator/Peripherals/Peripherals/Analog/STM32L5_ADC.cs
+--- a/src/Emulator/Peripherals/Peripherals/Analog/STM32L5_ADC.cs
++++ b/src/Emulator/Peripherals/Peripherals/Analog/STM32L5_ADC.cs
+@@ @@ public STM32L5_ADC(IMachine machine, double referenceVoltage, uint externalEvent
+                 // Base class configuration
+                 watchdogCount: 3,
+                 hasCalibration: false,
++                hasHighCalAddress: false,
+                 channelCount: 19,
+                 hasPrescaler: true,
+                 hasVbatPin: false,
+diff --git a/src/Emulator/Peripherals/Peripherals/Analog/STM32WBA_ADC.cs b/src/Emulator/Peripherals/Peripherals/Analog/STM32WBA_ADC.cs
+--- a/src/Emulator/Peripherals/Peripherals/Analog/STM32WBA_ADC.cs
++++ b/src/Emulator/Peripherals/Peripherals/Analog/STM32WBA_ADC.cs
+@@ @@ public STM32WBA_ADC(IMachine machine, double referenceVoltage, uint externalEven
+                 // Base class configuration
+                 watchdogCount: 3,
+                 hasCalibration: true,
++                hasHighCalAddress: true,
+                 channelCount: 14,
+                 hasPrescaler: true,
+                 hasVbatPin: false,
+diff --git a/src/Emulator/Peripherals/Peripherals/Analog/STM32_ADC_Common.cs b/src/Emulator/Peripherals/Peripherals/Analog/STM32_ADC_Common.cs
+--- a/src/Emulator/Peripherals/Peripherals/Analog/STM32_ADC_Common.cs
++++ b/src/Emulator/Peripherals/Peripherals/Analog/STM32_ADC_Common.cs
+@@ @@
+ //
+ // Copyright (c) 2010-2026 Antmicro
++// Copyright (c) 2023 OS Systems
+ //
+ // This file is licensed under the MIT License.
+ // Full license text is available in 'licenses/MIT.txt'.
+@@ @@ namespace Antmicro.Renode.Peripherals.Analog
+     //     watchdogCount ------ Specifies the number of analog watchdogs inside the peripheral between 1 and 3.
+     //    *hasCalibration ----- Specifies whether the calibration factor and voltage regulator are available to the software.
+     //                          ADCs without this feature will still have the ADCAL flag available to trigger the calibration procedure,
+-    //                          but not the CALFACT register.
++    //                          but not the CALFACT register nor the ADVREGEN field.
++    //     hasHighCalAddress -- Specifies that ADC_CALFACT is at low address or high address.
+     //     channelCount ------- Specifies the amount of available channels.
+     //                          Includes both internal sources (like the temperature sensor) as well as external.
+     //    *hasPrescaler ------- Specifies whether the ADC contains a prescaler for the external clock input.
+@@ @@ namespace Antmicro.Renode.Peripherals.Analog
+     public abstract class STM32_ADC_Common : IKnownSize, IProvidesRegisterCollection<DoubleWordRegisterCollection>, IDoubleWordPeripheral, IWordPeripheral
+     {
+         public STM32_ADC_Common(IMachine machine, double referenceVoltage, uint externalEventFrequency, int dmaChannel = 0, IDMA dmaPeripheral = null,
+-            int? watchdogCount = null, bool? hasCalibration = null, int? channelCount = null, bool? hasPrescaler = null,
++            int? watchdogCount = null, bool? hasCalibration = null, bool? hasHighCalAddress = null, int? channelCount = null, bool? hasPrescaler = null,
+             bool? hasVbatPin = null, bool? hasChannelSequence = null, bool? hasPowerRegister = null, bool? hasChannelSelect = null,
+             bool? hasOffset = null, bool? hasDifferentialMode = null, SamplingTime? samplingTime = null, bool? dualMode = null)
+         {
+-            if(!watchdogCount.HasValue || !hasCalibration.HasValue || !channelCount.HasValue || !hasPrescaler.HasValue ||
++            if(!watchdogCount.HasValue || !hasCalibration.HasValue || !hasHighCalAddress.HasValue || !channelCount.HasValue || !hasPrescaler.HasValue ||
+                 !hasVbatPin.HasValue || !hasChannelSequence.HasValue || !hasPowerRegister.HasValue || !hasChannelSelect.HasValue ||
+                 !hasOffset.HasValue || !hasDifferentialMode.HasValue || !samplingTime.HasValue || !dualMode.HasValue)
+             {
+@@ @@ public STM32_ADC_Common(IMachine machine, double referenceVoltage, uint external
+             }
+ 
+             registers = new DoubleWordRegisterCollection(this, BuildRegistersMap(hasCalibration.Value,
++                                                                                 hasHighCalAddress.Value,
+                                                                                  hasPrescaler.Value,
+                                                                                  hasVbatPin.Value,
+                                                                                  hasChannelSequence.Value,
+@@ @@ private uint MillivoltsToSample(double sampleInMillivolts, Resolution sampleReso
+             return referencedValue;
+         }
+ 
+-        private Dictionary<long, DoubleWordRegister> BuildRegistersMap(bool hasCalibration, bool hasPrescaler, bool hasVbatPin, bool hasChannelSequence, bool hasPowerRegister, bool hasOffset, bool hasDifferentialMode, SamplingTime samplingTime, bool dualMode)
++        private Dictionary<long, DoubleWordRegister> BuildRegistersMap(bool hasCalibration, bool hasHighCalAddress, bool hasPrescaler, bool hasVbatPin, bool hasChannelSequence, bool hasPowerRegister, bool hasOffset, bool hasDifferentialMode, SamplingTime samplingTime, bool dualMode)
+         {
+             var isrRegister = new DoubleWordRegister(this)
+                 .WithFlag(0, out adcReadyFlag, FieldMode.Read | FieldMode.WriteOneToClear, name: "ADRDY")
+@@ @@ private Dictionary<long, DoubleWordRegister> BuildRegistersMap(bool hasCalibrati
+ 
+             if(hasCalibration)
+             {
+-                registers.Add((long)Registers.CalibrationFactor, new DoubleWordRegister(this)
++                long regAddr = hasHighCalAddress ? (long)Registers.CalibrationFactorHigh : (long)Registers.CalibrationFactorLow;
++                registers.Add(regAddr, new DoubleWordRegister(this)
+                     .WithValueField(0, 7, name: "CALFACT")
+                     .WithReservedBits(7, 25));
+             }
+@@ @@ private enum Registers
+             // Gap intended
+             DifferentialMode       = 0xB0, // ADC_DIFSEL
+             // Gap intended
+-            CalibrationFactor      = 0xC4, // ADC_CALFACT
++            CalibrationFactorLow   = 0xB4, // ADC_CALFACT (C0/L0/G0)
++            CalibrationFactorHigh  = 0xC4, // ADC_CALFACT (WBA)
+             // Gap intended
+             CommonConfiguration    = 0x308, // ADC_CCR
+         }

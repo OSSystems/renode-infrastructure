@@ -1,0 +1,23 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Gerson Fernando Budke <gerson.budke@ossystems.com.br>
+Subject: [PATCH] STM32_ADC_Common: Fix Watchdog3Threshold definition
+
+If given implementation doesn't have channel selection, the third
+Watchdog Threshold will be under ChannelSelection offset. This
+afirmation not seems correct.
+
+Signed-off-by: Gerson Fernando Budke <gerson.budke@ossystems.com.br>
+
+diff --git a/src/Emulator/Peripherals/Peripherals/Analog/STM32_ADC_Common.cs b/src/Emulator/Peripherals/Peripherals/Analog/STM32_ADC_Common.cs
+--- a/src/Emulator/Peripherals/Peripherals/Analog/STM32_ADC_Common.cs
++++ b/src/Emulator/Peripherals/Peripherals/Analog/STM32_ADC_Common.cs
+@@ @@ private Dictionary<long, DoubleWordRegister> BuildRegistersMap(bool hasCalibrati
+             }
+             if(WatchdogCount == 3)
+             {
+-                // NOTE: If given implementation doesn't have channel selection, the third Watchdog Threshold will be under ChannelSelection offset
+-                registers.Add(hasChannelSelect ? (long)Registers.Watchdog3Threshold : (long)Registers.ChannelSelection, new DoubleWordRegister(this)
++                registers.Add((long)Registers.Watchdog3Threshold, new DoubleWordRegister(this)
+                     .WithValueField(0, 12, out analogWatchdogLowValues[2], name: "LT")
+                     .WithReservedBits(12, 4)
+                     .WithValueField(16, 12, out analogWatchdogHighValues[2], name: "HT")

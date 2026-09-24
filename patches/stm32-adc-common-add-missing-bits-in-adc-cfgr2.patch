@@ -1,0 +1,23 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Gerson Fernando Budke <gerson.budke@ossystems.com.br>
+Subject: [PATCH] [GH#542] STM32_ADC_Common: Add missing bits in ADC_CFGR2
+
+Signed-off-by: Gerson Fernando Budke <gerson.budke@ossystems.com.br>
+
+diff --git a/src/Emulator/Peripherals/Peripherals/Analog/STM32_ADC_Common.cs b/src/Emulator/Peripherals/Peripherals/Analog/STM32_ADC_Common.cs
+--- a/src/Emulator/Peripherals/Peripherals/Analog/STM32_ADC_Common.cs
++++ b/src/Emulator/Peripherals/Peripherals/Analog/STM32_ADC_Common.cs
+@@ @@ private Dictionary<long, DoubleWordRegister> BuildRegistersMap(bool hasCalibrati
+             }
+ 
+             var configurationRegister2 = new DoubleWordRegister(this)
+-                .WithReservedBits(0, 30)
++                .WithFlag(0, name: "OVSE")
++                .WithReservedBits(1, 1)
++                .WithFlags(2, 3, name: "OVSR")
++                .WithFlags(5, 4, name: "OVSS")
++                .WithTag("TOVS", 9, 1)
++                .WithReservedBits(10, 20)
+                 .WithTag("CKMODE", 30, 2);
+ 
+             var commonConfigurationRegister = new DoubleWordRegister(this)

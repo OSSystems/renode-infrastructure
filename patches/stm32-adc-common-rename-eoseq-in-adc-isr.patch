@@ -1,0 +1,21 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Gerson Fernando Budke <gerson.budke@ossystems.com.br>
+Subject: [PATCH] [GH#414] STM32_ADC_Common: Rename EOSEQ in ADC_ISR
+
+Rename EOSEQ to EOS in ADC_ISR register to be compliance with
+C0/F0/G0/L0/WBA.
+
+Signed-off-by: Gerson Fernando Budke <gerson.budke@ossystems.com.br>
+
+diff --git a/src/Emulator/Peripherals/Peripherals/Analog/STM32_ADC_Common.cs b/src/Emulator/Peripherals/Peripherals/Analog/STM32_ADC_Common.cs
+--- a/src/Emulator/Peripherals/Peripherals/Analog/STM32_ADC_Common.cs
++++ b/src/Emulator/Peripherals/Peripherals/Analog/STM32_ADC_Common.cs
+@@ @@ private Dictionary<long, DoubleWordRegister> BuildRegistersMap(bool hasCalibrati
+                             machine.LocalTimeSource.ExecuteInNearestSyncedState((___) => SampleNextChannel());
+                         }
+                     }, name: "EOC")
+-                .WithFlag(3, out endOfSequenceFlag, FieldMode.Read | FieldMode.WriteOneToClear, name: "EOSEQ")
++                .WithFlag(3, out endOfSequenceFlag, FieldMode.Read | FieldMode.WriteOneToClear, name: "EOS")
+                 .WithFlag(4, out adcOverrunFlag, FieldMode.Read | FieldMode.WriteOneToClear, name: "OVR")
+                 .WithReservedBits(5, 2)
+                 .WithFlags(7, WatchdogCount, out analogWatchdogFlags, FieldMode.Read | FieldMode.WriteOneToClear, name: "AWD")

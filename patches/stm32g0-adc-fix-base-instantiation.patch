@@ -1,0 +1,31 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Gerson Fernando Budke <gerson.budke@ossystems.com.br>
+Subject: [PATCH] [FIX] STM32G0_ADC: Fix base instantiation
+
+Signed-off-by: Gerson Fernando Budke <gerson.budke@ossystems.com.br>
+
+diff --git a/src/Emulator/Peripherals/Peripherals/Analog/STM32G0_ADC.cs b/src/Emulator/Peripherals/Peripherals/Analog/STM32G0_ADC.cs
+--- a/src/Emulator/Peripherals/Peripherals/Analog/STM32G0_ADC.cs
++++ b/src/Emulator/Peripherals/Peripherals/Analog/STM32G0_ADC.cs
+@@ @@
+ //
+-// Copyright (c) 2010-2026 Antmicro
++// Copyright (c) 2010-2024 Antmicro
++// Copyright (c) 2023-2025 OS Systems
+ //
+ // This file is licensed under the MIT License.
+ // Full license text is available in 'licenses/MIT.txt'.
+@@ @@ public STM32G0_ADC(IMachine machine, double referenceVoltage, uint externalEvent
+                 dmaChannel,
+                 dmaPeripheral,
+                 // Base class configuration
+-                watchdogCount: 1,
+-                hasCalibration: false,
++                watchdogCount: 3,
++                hasCalibration: true,
+                 channelCount: 19,
+-                hasPrescaler: false,
++                hasPrescaler: true,
+                 hasVbatPin: true,
+                 hasChannelSelect: true,
+                 hasChannelSequence: true,
