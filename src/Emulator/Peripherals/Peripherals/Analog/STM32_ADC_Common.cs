@@ -537,6 +537,10 @@ namespace Antmicro.Renode.Peripherals.Analog
                     .WithReservedBits(10, 1);
             }
 
+            // SCANDIR, or a reserved bit, takes the bit left free by the RES field
+            var resolutionOffset = adcVersion == AdcVersion.V1 || adcVersion == AdcVersion.V2 ? 3 : 2;
+            var scanDirectionOffset = resolutionOffset == 2 ? 4 : 2;
+
             var configurationRegister1 = new DoubleWordRegister(this)
                 .WithFlag(0, out dmaEnabled, name: "DMAEN")
                 .WithFlag(1, writeCallback: (_, val) =>
@@ -546,8 +550,7 @@ namespace Antmicro.Renode.Peripherals.Analog
                             this.Log(LogLevel.Warning, "DMA One Shot mode not supported");
                         }
                     }, name: "DMACFG")
-                // When fully configurable channel sequencer is available, the SCANDIR and RES fields are swapped
-                .WithEnumField<DoubleWordRegister, Resolution>(hasChannelSequence ? 2 : 3, 2, out resolution, name: "RES")
+                .WithEnumField<DoubleWordRegister, Resolution>(resolutionOffset, 2, out resolution, name: "RES")
                 .WithEnumField<DoubleWordRegister, Align>(5, 1, out align, name: "ALIGN")
                 .WithTag("EXTSEL", 6, 2)
                 .WithReservedBits(9, 1)
@@ -622,9 +625,8 @@ namespace Antmicro.Renode.Peripherals.Analog
 
             if(hasScanDirection)
             {
-                // When fully configurable channel sequencer is available, the SCANDIR and RES fields are swapped
                 configurationRegister1
-                    .WithEnumField<DoubleWordRegister, ScanDirection>(hasChannelSequence ? 4 : 2, 1, writeCallback: (_, val) =>
+                    .WithEnumField<DoubleWordRegister, ScanDirection>(scanDirectionOffset, 1, writeCallback: (_, val) =>
                         {
                             scanDirection = val;
                         }, name: "SCANDIR");
@@ -632,7 +634,7 @@ namespace Antmicro.Renode.Peripherals.Analog
             else
             {
                 scanDirection = ScanDirection.Ascending;
-                configurationRegister1.WithReservedBits(hasChannelSequence ? 4 : 2, 1);
+                configurationRegister1.WithReservedBits(scanDirectionOffset, 1);
             }
 
             var configurationRegister2 = new DoubleWordRegister(this)
