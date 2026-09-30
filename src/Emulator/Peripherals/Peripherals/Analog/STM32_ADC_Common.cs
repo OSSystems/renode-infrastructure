@@ -122,6 +122,7 @@ namespace Antmicro.Renode.Peripherals.Analog
             }
             this.voltageRegulator = voltageRegulator;
             hasEndOfCalibration = hasCalibration && (adcVersion == AdcVersion.V1 || adcVersion == AdcVersion.V4);
+            hasChannelConfigurationReady = hasChannelSequence && adcVersion == AdcVersion.V1;
 
             registers = new DoubleWordRegisterCollection(this, BuildRegistersMap(hasCalibration,
                                                                                  hasDeepPowerDown,
@@ -249,7 +250,22 @@ namespace Antmicro.Renode.Peripherals.Analog
             {
                 irq |= endOfCalibrationFlag.Value && endOfCalibrationInterruptEnable.Value;
             }
+            if(hasChannelConfigurationReady)
+            {
+                irq |= channelConfigurationReadyFlag.Value && channelConfigurationReadyInterruptEnable.Value;
+            }
             IRQ.Set(irq);
+        }
+
+        private void SetChannelConfigurationReady()
+        {
+            if(!hasChannelConfigurationReady)
+            {
+                return;
+            }
+            // Channel configuration is applied immediately
+            channelConfigurationReadyFlag.Value = true;
+            UpdateInterrupts();
         }
 
         private void StartSampling()
@@ -508,7 +524,7 @@ namespace Antmicro.Renode.Peripherals.Analog
                 .WithFlag(4, out adcOverrunFlag, FieldMode.Read | FieldMode.WriteOneToClear, name: "OVR")
                 .WithFlags(7, WatchdogCount, out analogWatchdogFlags, FieldMode.Read | FieldMode.WriteOneToClear, name: "AWD")
                 .WithReservedBits(7 + WatchdogCount, 3 - WatchdogCount)
-                .WithReservedBits(13, 19)
+                .WithReservedBits(14, 18)
                 .WithWriteCallback((_, __) => UpdateInterrupts());
 
             var interruptEnableRegister = new DoubleWordRegister(this)
@@ -519,8 +535,23 @@ namespace Antmicro.Renode.Peripherals.Analog
                 .WithFlag(4, out adcOverrunInterruptEnable, name: "OVRIE")
                 .WithFlags(7, WatchdogCount, out analogWatchdogsInterruptEnable, name: "AWDIE")
                 .WithReservedBits(7 + WatchdogCount, 3 - WatchdogCount)
-                .WithReservedBits(13, 19)
+                .WithReservedBits(14, 18)
                 .WithWriteCallback((_, __) => UpdateInterrupts());
+
+            if(hasChannelConfigurationReady)
+            {
+                isrRegister
+                    .WithFlag(13, out channelConfigurationReadyFlag, FieldMode.Read | FieldMode.WriteOneToClear, name: "CCRDY");
+                interruptEnableRegister
+                    .WithFlag(13, out channelConfigurationReadyInterruptEnable, name: "CCRDYIE");
+            }
+            else
+            {
+                isrRegister
+                    .WithReservedBits(13, 1);
+                interruptEnableRegister
+                    .WithReservedBits(13, 1);
+            }
 
             if(hasEndOfCalibration)
             {
@@ -671,7 +702,7 @@ namespace Antmicro.Renode.Peripherals.Analog
                 if(!hasChannelInjection)
                 {
                     configurationRegister1
-                        .WithFlag(21, name: "CHSELRMOD"); // no actual logic, but software expects to read the value back
+                        .WithFlag(21, writeCallback: (_, __) => SetChannelConfigurationReady(), name: "CHSELRMOD"); // no actual logic, but software expects to read the value back
                 }
             }
             else
@@ -686,6 +717,7 @@ namespace Antmicro.Renode.Peripherals.Analog
                     .WithEnumField<DoubleWordRegister, ScanDirection>(scanDirectionOffset, 1, writeCallback: (_, val) =>
                         {
                             scanDirection = val;
+                            SetChannelConfigurationReady();
                         }, name: "SCANDIR");
             }
             else
@@ -953,6 +985,7 @@ namespace Antmicro.Renode.Peripherals.Analog
                            valueProviderCallback: (id, __) => channelSelected[id],
                            writeCallback: (id, _, val) => { this.Log(LogLevel.Debug, "Channel {0} enable set as {1}", id, val); channelSelected[id] = val; })
                     .WithReservedBits(ADCChannelCount, 32 - ADCChannelCount)
+                    .WithWriteCallback((_, __) => SetChannelConfigurationReady())
                 );
             }
 
@@ -1317,6 +1350,7 @@ namespace Antmicro.Renode.Peripherals.Analog
         private IFlagRegisterField analogWatchdogSingleChannel;
         private IFlagRegisterField endOfSequenceInterruptEnable;
         private IFlagRegisterField endOfCalibrationInterruptEnable;
+        private IFlagRegisterField channelConfigurationReadyInterruptEnable;
         private IFlagRegisterField endOfSamplingInterruptEnable;
         private IFlagRegisterField endOfConversionInterruptEnable;
         private IFlagRegisterField[] analogWatchdogsInterruptEnable;
@@ -1324,6 +1358,7 @@ namespace Antmicro.Renode.Peripherals.Analog
         private IFlagRegisterField adcOverrunInterruptEnable;
         private IFlagRegisterField endOfSequenceFlag;
         private IFlagRegisterField endOfCalibrationFlag;
+        private IFlagRegisterField channelConfigurationReadyFlag;
         private IFlagRegisterField endOfConversionFlag;
         private IFlagRegisterField[] analogWatchdogFlags;
         private IFlagRegisterField adcReadyFlag;
@@ -1372,6 +1407,7 @@ namespace Antmicro.Renode.Peripherals.Analog
         private readonly VoltageRegulator voltageRegulator;
         private readonly bool hasChannelSelect;
         private readonly bool hasEndOfCalibration;
+        private readonly bool hasChannelConfigurationReady;
         private readonly bool hasSeparateThresholdRegisters;
         private readonly ResolutionRange resolutionRange;
         private readonly bool hasChannelPreselection;
