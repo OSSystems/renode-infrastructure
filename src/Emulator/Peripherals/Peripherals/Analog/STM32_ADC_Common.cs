@@ -567,6 +567,7 @@ namespace Antmicro.Renode.Peripherals.Analog
             // SCANDIR, or a reserved bit, takes the bit left free by the RES field
             var resolutionOffset = adcVersion == AdcVersion.V1 || adcVersion == AdcVersion.V2 ? 3 : 2;
             var scanDirectionOffset = resolutionOffset == 2 ? 4 : 2;
+            var externalTriggerSelectionWidth = adcVersion == AdcVersion.V1 || adcVersion == AdcVersion.V4 ? 3 : 4;
 
             var configurationRegister1 = new DoubleWordRegister(this)
                 .WithFlag(0, out dmaEnabled, name: "DMAEN")
@@ -585,8 +586,7 @@ namespace Antmicro.Renode.Peripherals.Analog
                         }
                     }, name: "RES")
                 .WithEnumField<DoubleWordRegister, Align>(5, 1, out align, name: "ALIGN")
-                .WithTag("EXTSEL", 6, 2)
-                .WithReservedBits(9, 1)
+                .WithTag("EXTSEL", 6, externalTriggerSelectionWidth)
                 .WithValueField(10, 2, writeCallback: (_, val) =>
                     {
                         // On hardware it is possible to configure on which edge should the trigger fire
@@ -613,6 +613,12 @@ namespace Antmicro.Renode.Peripherals.Analog
                 .WithFlag(22, out analogWatchdogSingleChannel, name: "AWDSGL")
                 .WithFlag(23, out analogWatchdogEnable, name: "AWDEN")
                 .WithValueField(26, 5, out analogWatchdogChannel, name: "AWDCH");
+
+            if(externalTriggerSelectionWidth == 3)
+            {
+                configurationRegister1
+                    .WithReservedBits(9, 1);
+            }
 
             if(hasChannelInjection)
             {
