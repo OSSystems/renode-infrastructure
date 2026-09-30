@@ -26,6 +26,7 @@ namespace Antmicro.Renode.Peripherals.Analog
                 hasCalibration: true,
                 voltageRegulator: VoltageRegulator.OneBit,
                 hasDeepPowerDown: true,
+                hasLowFrequencyMode: false,
                 channelCount: 19,
                 hasPrescaler: true,
                 hasVbatPin: false,
