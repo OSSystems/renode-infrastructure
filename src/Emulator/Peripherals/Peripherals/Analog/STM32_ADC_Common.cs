@@ -692,8 +692,19 @@ namespace Antmicro.Renode.Peripherals.Analog
             }
 
             var configurationRegister2 = new DoubleWordRegister(this)
-                .WithReservedBits(10, 19)
-                .WithTag("CKMODE", 30, 2);
+                .WithReservedBits(10, 19);
+
+            // CKMODE is in ADC_CFGR2 on V1, in ADC_CCR on V2 and V3, and absent on V4
+            if(adcVersion == AdcVersion.V1)
+            {
+                configurationRegister2
+                    .WithTag("CKMODE", 30, 2);
+            }
+            else
+            {
+                configurationRegister2
+                    .WithReservedBits(30, 2);
+            }
 
             if(hasLowFrequencyTrigger)
             {
@@ -723,10 +734,20 @@ namespace Antmicro.Renode.Peripherals.Analog
 
             var commonConfigurationRegister = new DoubleWordRegister(this)
                 .WithReservedBits(0, 16)
-                .WithValueField(16, 2, name: "CKMODE") // no actual logic, since we do not handle clock in this model
                 .WithTaggedFlag("VREFEN", 22)
                 .WithTaggedFlag("TSEN", 23)
                 .WithReservedBits(26, 6);
+
+            if(adcVersion == AdcVersion.V2 || adcVersion == AdcVersion.V3)
+            {
+                commonConfigurationRegister
+                    .WithValueField(16, 2, name: "CKMODE"); // no actual logic, since we do not handle clock in this model
+            }
+            else
+            {
+                commonConfigurationRegister
+                    .WithReservedBits(16, 2);
+            }
 
             if(hasLowFrequencyMode)
             {
