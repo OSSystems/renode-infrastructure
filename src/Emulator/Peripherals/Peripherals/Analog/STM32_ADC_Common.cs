@@ -182,7 +182,7 @@ namespace Antmicro.Renode.Peripherals.Analog
         {
             var maxValue = (1 << data.Width) - 1;
 
-            if(MillivoltsToSample(mv, Resolution.Min) > maxValue)
+            if(MillivoltsToSample(mv, MinResolutionBits) > maxValue)
             {
                 this.Log(LogLevel.Warning, "Channel {0}: {1}mV is too big in any ADC configuration", channel, mv);
             }
@@ -190,7 +190,7 @@ namespace Antmicro.Renode.Peripherals.Analog
             {
                 this.Log(LogLevel.Warning, "Channel {0}: {1}mV is too big for current ADC resolution", channel, mv);
             }
-            else if(MillivoltsToSample(mv, Resolution.Max) > maxValue)
+            else if(MillivoltsToSample(mv, MaxResolutionBits) > maxValue)
             {
                 this.Log(LogLevel.Debug,
                          "Channel {0}: {1}mV will be too big for some ADC resolution other than the current one",
@@ -450,12 +450,11 @@ namespace Antmicro.Renode.Peripherals.Analog
 
         private uint MillivoltsToSample(double sampleInMillivolts)
         {
-            return MillivoltsToSample(sampleInMillivolts, resolution.Value);
+            return MillivoltsToSample(sampleInMillivolts, ResolutionToBits(resolution.Value));
         }
 
-        private uint MillivoltsToSample(double sampleInMillivolts, Resolution sampleResolution)
+        private uint MillivoltsToSample(double sampleInMillivolts, ushort resolutionInBits)
         {
-            ushort resolutionInBits = ResolutionToBits(sampleResolution);
             uint referencedValue = (uint)Math.Round((sampleInMillivolts / (referenceVoltage * 1000)) * ((1 << resolutionInBits) - 1));
             if(align.Value == Align.Left)
             {
@@ -571,7 +570,13 @@ namespace Antmicro.Renode.Peripherals.Analog
                             this.Log(LogLevel.Warning, "DMA One Shot mode not supported");
                         }
                     }, name: "DMACFG")
-                .WithEnumField<DoubleWordRegister, Resolution>(resolutionOffset, 2, out resolution, name: "RES")
+                .WithValueField(resolutionOffset, adcVersion == AdcVersion.V3 ? 3 : 2, out resolution, writeCallback: (_, val) =>
+                    {
+                        if(adcVersion == AdcVersion.V3 && val == 0b100)
+                        {
+                            this.Log(LogLevel.Warning, "RES 0b100 is the 8 bit resolution of revision Y devices, use 0b111");
+                        }
+                    }, name: "RES")
                 .WithEnumField<DoubleWordRegister, Align>(5, 1, out align, name: "ALIGN")
                 .WithTag("EXTSEL", 6, 2)
                 .WithReservedBits(9, 1)
@@ -655,7 +660,10 @@ namespace Antmicro.Renode.Peripherals.Analog
             else
             {
                 scanDirection = ScanDirection.Ascending;
-                configurationRegister1.WithReservedBits(scanDirectionOffset, 1);
+                if(adcVersion != AdcVersion.V3)
+                {
+                    configurationRegister1.WithReservedBits(scanDirectionOffset, 1);
+                }
             }
 
             var configurationRegister2 = new DoubleWordRegister(this)
@@ -1164,30 +1172,39 @@ namespace Antmicro.Renode.Peripherals.Analog
             }
         }
 
-        private ushort ResolutionToBits(Resolution resolution)
+        private ushort ResolutionToBits(ulong resolution)
         {
             if(resolutionRange == ResolutionRange.Bits8_16)
             {
+                // STM32H74x/75x revision V encoding, 0b100 is the revision Y 8 bit resolution
                 switch(resolution)
                 {
-                case Resolution.Bits12_16: return 16;
-                case Resolution.Bits10_14: return 14;
-                case Resolution.Bits8_12: return 12;
-                case Resolution.Bits6_8: return 8;
+                case 0b000: return 16;
+                case 0b001: return 14;
+                case 0b010: return 12;
+                case 0b011: return 10;
+                case 0b100: return 8;
+                case 0b101: return 14;
+                case 0b110: return 12;
+                case 0b111: return 8;
                 }
             }
             else if(resolutionRange == ResolutionRange.Bits6_12)
             {
                 switch(resolution)
                 {
-                case Resolution.Bits12_16: return 12;
-                case Resolution.Bits10_14: return 10;
-                case Resolution.Bits8_12: return 8;
-                case Resolution.Bits6_8: return 6;
+                case 0b00: return 12;
+                case 0b01: return 10;
+                case 0b10: return 8;
+                case 0b11: return 6;
                 }
             }
             throw new NotImplementedException($"Missing {resolutionRange} bit support");
         }
+
+        private ushort MinResolutionBits => resolutionRange == ResolutionRange.Bits8_16 ? (ushort)8 : (ushort)6;
+
+        private ushort MaxResolutionBits => resolutionRange == ResolutionRange.Bits8_16 ? (ushort)16 : (ushort)12;
 
         private IEnumRegisterField<Align> align;
         // While watchdogs 2 and 3 use bitfields for selecting channels to watch
@@ -1224,7 +1241,7 @@ namespace Antmicro.Renode.Peripherals.Analog
 
         private IFlagRegisterField dmaEnabled;
         private ScanDirection scanDirection;
-        private IEnumRegisterField<Resolution> resolution;
+        private IValueRegisterField resolution;
         private IFlagRegisterField endOfSamplingFlag;
 
         private IValueRegisterField regularSequenceLength;
@@ -1293,16 +1310,6 @@ namespace Antmicro.Renode.Peripherals.Analog
             V3, // H7, MP1: PCSEL, LTR1/HTR1@0x20, LTR2-3/HTR2-3@0xB0-0xBC, DIFSEL@0xC0, CALFACT@0xC4, CALFACT2@0xC8
             V4, // WBA: V1 layout + PWRR@0x44, CALFACT@0xC4
             V5, // U5, U3, N6, MP2, C5: AWD1-3 LTR/HTR@0xA8-0xBC, GCOMP@0x70, CALFACT@0xC4, OR@0xD0
-        }
-
-        private enum Resolution
-        {
-            Bits12_16 = 0b00,
-            Max       = 0b00, // Keep alias in second place to display Bits12_16 name when dumping Resolution value
-            Bits10_14 = 0b01,
-            Bits8_12  = 0b10,
-            Bits6_8   = 0b11,
-            Min       = 0b11, // Keep alias in second place to display Bits6_8 name when dumping Resolution value
         }
 
         private enum ScanDirection
