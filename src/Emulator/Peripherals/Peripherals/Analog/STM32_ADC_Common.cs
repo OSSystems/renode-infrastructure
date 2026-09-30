@@ -106,6 +106,7 @@ namespace Antmicro.Renode.Peripherals.Analog
                 throw new ConstructionException("Two bit ADVREGEN overlaps DEEPPWD");
             }
             this.voltageRegulator = voltageRegulator;
+            hasEndOfCalibration = hasCalibration && (adcVersion == AdcVersion.V1 || adcVersion == AdcVersion.V4);
 
             registers = new DoubleWordRegisterCollection(this, BuildRegistersMap(hasCalibration,
                                                                                  hasDeepPowerDown,
@@ -225,6 +226,10 @@ namespace Antmicro.Renode.Peripherals.Analog
             {
                 irq |= endOfConversionInjectedFlag.Value && endOfConversionInjectedInterruptEnable.Value;
                 irq |= endOfSequenceInjectedFlag.Value && endOfSequenceInjectedInterruptEnable.Value;
+            }
+            if(hasEndOfCalibration)
+            {
+                irq |= endOfCalibrationFlag.Value && endOfCalibrationInterruptEnable.Value;
             }
             IRQ.Set(irq);
         }
@@ -499,12 +504,12 @@ namespace Antmicro.Renode.Peripherals.Analog
                 .WithReservedBits(13, 19)
                 .WithWriteCallback((_, __) => UpdateInterrupts());
 
-            if(hasCalibration && (adcVersion == AdcVersion.V1 || adcVersion == AdcVersion.V4))
+            if(hasEndOfCalibration)
             {
                 isrRegister
-                    .WithTaggedFlag("EOCAL", 11);
+                    .WithFlag(11, out endOfCalibrationFlag, FieldMode.Read | FieldMode.WriteOneToClear, name: "EOCAL");
                 interruptEnableRegister
-                    .WithTaggedFlag("EOCALIE", 11);
+                    .WithFlag(11, out endOfCalibrationInterruptEnable, name: "EOCALIE");
             }
             else
             {
@@ -750,7 +755,15 @@ namespace Antmicro.Renode.Peripherals.Analog
                             }
                         }, name: "ADSTP")
                     .WithReservedBits(30, 1)
-                    .WithTaggedFlag("ADCAL", 31);
+                    // Calibration completes immediately
+                    .WithFlag(31, valueProviderCallback: _ => false, writeCallback: (_, val) =>
+                        {
+                            if(val && hasEndOfCalibration)
+                            {
+                                endOfCalibrationFlag.Value = true;
+                                UpdateInterrupts();
+                            }
+                        }, name: "ADCAL");
 
             switch(voltageRegulator)
             {
@@ -1228,12 +1241,14 @@ namespace Antmicro.Renode.Peripherals.Analog
         private IValueRegisterField data;
         private IFlagRegisterField analogWatchdogSingleChannel;
         private IFlagRegisterField endOfSequenceInterruptEnable;
+        private IFlagRegisterField endOfCalibrationInterruptEnable;
         private IFlagRegisterField endOfSamplingInterruptEnable;
         private IFlagRegisterField endOfConversionInterruptEnable;
         private IFlagRegisterField[] analogWatchdogsInterruptEnable;
         private IFlagRegisterField adcReadyInterruptEnable;
         private IFlagRegisterField adcOverrunInterruptEnable;
         private IFlagRegisterField endOfSequenceFlag;
+        private IFlagRegisterField endOfCalibrationFlag;
         private IFlagRegisterField endOfConversionFlag;
         private IFlagRegisterField[] analogWatchdogFlags;
         private IFlagRegisterField adcReadyFlag;
@@ -1281,6 +1296,7 @@ namespace Antmicro.Renode.Peripherals.Analog
         private readonly AdcVersion adcVersion;
         private readonly VoltageRegulator voltageRegulator;
         private readonly bool hasChannelSelect;
+        private readonly bool hasEndOfCalibration;
         private readonly bool hasSeparateThresholdRegisters;
         private readonly ResolutionRange resolutionRange;
         private readonly bool hasChannelPreselection;
