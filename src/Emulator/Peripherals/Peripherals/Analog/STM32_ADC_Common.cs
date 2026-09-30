@@ -25,11 +25,11 @@ namespace Antmicro.Renode.Peripherals.Analog
     // Superset of all ADC features found on many STM MPU series.
     //
     // Available features:
+    //     adcVersion --------- Specifies from the AdcVersion enum which register layout this ADC uses.
     //     watchdogCount ------ Specifies the number of analog watchdogs inside the peripheral between 1 and 3.
     //    *hasCalibration ----- Specifies whether the calibration factor and voltage regulator are available to the software.
     //                          ADCs without this feature will still have the ADCAL flag available to trigger the calibration procedure,
     //                          but not the CALFACT register.
-    //     hasHighCalAddress -- Specifies whether ADC_CALFACT is at the high (0xC4) or low (0xB4) address.
     //     channelCount ------- Specifies the amount of available channels.
     //                          Includes both internal sources (like the temperature sensor) as well as external.
     //    *hasPrescaler ------- Specifies whether the ADC contains a prescaler for the external clock input.
@@ -43,10 +43,6 @@ namespace Antmicro.Renode.Peripherals.Analog
     //    *hasChannelSequence - Specifies whether this ADC provides a fully configurable sequencer.
     //                          If not, the ADC can convert a single channel or a sequence of channels,
     //                          but only scanning sequentially either forwards or backwards.
-    //    *hasPowerRegister --- Specifies whether this ADC has a separate register for power managment.
-    //                          If false, that means the model exposes features like auto-off in one of the configuration registers.
-    //    *hasChannelSelect --- Specifies whether this ADC has channel selection register.
-    //                          If false, third watchdog threshold configuration register will live under this register's offset.
     //    *hasOffset ---------- Specifies whether this ADC has offset registers. These registers are tagged but not used by the model.
     //    *hasDifferentialMode  Specifies whether this has differential mode. The differential mode register is tagged but its
     //                          value is not used by the model.
@@ -55,7 +51,6 @@ namespace Antmicro.Renode.Peripherals.Analog
     //    *dualMode ----------- Indicates if there is a secondary ADC that can work in dual mode.
     //    hasLinearityCalibration - Specifies whether the ADC supports linear calibration procedure.
     //    *injectedChannels --- Specifies whether injected channels are supported (auto-injection, external trigger, queuing, JQOVF not implemented).
-    //    hasSeparateThresholdRegisters - Specifies whether watchdog threshold values are stored in ADC_AWDnTR registers or ADC_LTRn and ADC_HTRn registers.
     //    resolutionRange -- Specifies bit resolution range this peripheral supports.
     //    hasChannelPreselection - Specifies whether ADC requires preselecting channels to be sampled.
     //    hasScanDirection ---- Specifies whether the ADC supports descending sequence scanning.
@@ -64,9 +59,9 @@ namespace Antmicro.Renode.Peripherals.Analog
     public abstract class STM32_ADC_Common : IKnownSize, IProvidesRegisterCollection<DoubleWordRegisterCollection>, IDoubleWordPeripheral, IWordPeripheral, IADC
     {
         public STM32_ADC_Common(IMachine machine, double referenceVoltage, uint externalEventFrequency, int dmaChannel, IDMA dmaPeripheral,
-            int watchdogCount, bool hasCalibration, bool hasHighCalAddress, int channelCount, bool hasPrescaler,
-            bool hasVbatPin, bool hasChannelSequence, bool hasPowerRegister, bool hasChannelSelect,
-            bool hasOffset, bool hasDifferentialMode, SamplingTime samplingTime, bool dualMode, bool hasLinearityCalibration, bool hasChannelInjection, bool hasSeparateThresholdRegisters, ResolutionRange resolutionRange, bool hasChannelPreselection, bool hasScanDirection)
+            AdcVersion adcVersion, int watchdogCount, bool hasCalibration, int channelCount, bool hasPrescaler,
+            bool hasVbatPin, bool hasChannelSequence,
+            bool hasOffset, bool hasDifferentialMode, SamplingTime samplingTime, bool dualMode, bool hasLinearityCalibration, bool hasChannelInjection, ResolutionRange resolutionRange, bool hasChannelPreselection, bool hasScanDirection)
         {
             if(dmaPeripheral == null)
             {
@@ -82,13 +77,19 @@ namespace Antmicro.Renode.Peripherals.Analog
                     throw new ConstructionException($"Invalid 'dmaChannel' argument value: '{dmaChannel}'. Available channels: 1-{dmaPeripheral.NumberOfChannels}");
                 }
             }
+            if(adcVersion == AdcVersion.V5)
+            {
+                throw new ConstructionException($"ADC version {adcVersion} is not supported yet");
+            }
 
             this.machine = machine;
             ADCContainer = new SimpleContainerHelper<IRESDSampleSource<VoltageSample>>(machine, this);
 
             ADCChannelCount = channelCount;
             WatchdogCount = watchdogCount;
-            this.hasChannelSelect = hasChannelSelect;
+            this.adcVersion = adcVersion;
+            hasChannelSelect = adcVersion == AdcVersion.V1 || adcVersion == AdcVersion.V4;
+            hasSeparateThresholdRegisters = adcVersion == AdcVersion.V3 || adcVersion == AdcVersion.V5;
             this.hasChannelInjection = hasChannelInjection;
             this.resolutionRange = resolutionRange;
             this.hasChannelPreselection = hasChannelPreselection;
@@ -103,18 +104,15 @@ namespace Antmicro.Renode.Peripherals.Analog
             }
 
             registers = new DoubleWordRegisterCollection(this, BuildRegistersMap(hasCalibration,
-                                                                                 hasHighCalAddress,
                                                                                  hasPrescaler,
                                                                                  hasVbatPin,
                                                                                  hasChannelSequence,
-                                                                                 hasPowerRegister,
                                                                                  hasOffset,
                                                                                  hasDifferentialMode,
                                                                                  samplingTime,
                                                                                  dualMode,
                                                                                  hasLinearityCalibration,
                                                                                  hasChannelInjection,
-                                                                                 hasSeparateThresholdRegisters,
                                                                                  hasScanDirection));
 
             IRQ = new GPIO();
@@ -462,8 +460,10 @@ namespace Antmicro.Renode.Peripherals.Analog
             return referencedValue;
         }
 
-        private Dictionary<long, DoubleWordRegister> BuildRegistersMap(bool hasCalibration, bool hasHighCalAddress, bool hasPrescaler, bool hasVbatPin, bool hasChannelSequence, bool hasPowerRegister, bool hasOffset, bool hasDifferentialMode, SamplingTime samplingTime, bool dualMode, bool hasLinearityCalibration, bool hasChannelInjection, bool hasSeparateThresholdRegisters, bool hasScanDirection)
+        private Dictionary<long, DoubleWordRegister> BuildRegistersMap(bool hasCalibration, bool hasPrescaler, bool hasVbatPin, bool hasChannelSequence, bool hasOffset, bool hasDifferentialMode, SamplingTime samplingTime, bool dualMode, bool hasLinearityCalibration, bool hasChannelInjection, bool hasScanDirection)
         {
+            var hasPowerRegister = adcVersion == AdcVersion.V4;
+
             var isrRegister = new DoubleWordRegister(this)
                 .WithFlag(0, out adcReadyFlag, FieldMode.Read | FieldMode.WriteOneToClear, name: "ADRDY")
                 .WithFlag(1, out endOfSamplingFlag, FieldMode.Read | FieldMode.WriteOneToClear, name: "EOSMP")
@@ -792,7 +792,7 @@ namespace Antmicro.Renode.Peripherals.Analog
             // Optional registers
             if(hasChannelSelect)
             {
-                registers.Add((long)Registers.ChannelSelection, new DoubleWordRegister(this)
+                registers.Add(GetChannelSelectionRegister(), new DoubleWordRegister(this)
                     .WithFlags(0, ADCChannelCount,
                            valueProviderCallback: (id, __) => channelSelected[id],
                            writeCallback: (id, _, val) => { this.Log(LogLevel.Debug, "Channel {0} enable set as {1}", id, val); channelSelected[id] = val; })
@@ -800,12 +800,11 @@ namespace Antmicro.Renode.Peripherals.Analog
                 );
             }
 
-            BuildWatchdogRegisters(registers, hasSeparateThresholdRegisters);
+            BuildWatchdogRegisters(registers);
 
             if(hasCalibration)
             {
-                var register = hasHighCalAddress ? Registers.CalibrationFactorHigh : Registers.CalibrationFactorLow;
-                registers.Add((long)register, new DoubleWordRegister(this)
+                registers.Add(GetCalibrationFactorRegister(), new DoubleWordRegister(this)
                     .WithValueField(0, 7, name: "CALFACT")
                     .WithReservedBits(7, 25));
             }
@@ -813,14 +812,14 @@ namespace Antmicro.Renode.Peripherals.Analog
             if(hasLinearityCalibration)
             {
                 // Also present on U5 family, which does not have linearity calibration
-                registers.Add((long)Registers.CalibrationFactor2, new DoubleWordRegister(this)
+                registers.Add((long)RegistersV3.CalibrationFactor2, new DoubleWordRegister(this)
                     .WithValueField(0, 7, name: "CALFACT2")
                     .WithReservedBits(7, 25));
             }
 
             if(hasPowerRegister)
             {
-                registers.Add((long)Registers.Power, new DoubleWordRegister(this)
+                registers.Add((long)RegistersV4.Power, new DoubleWordRegister(this)
                     .WithTaggedFlag("AUTOFF", 0)
                     .WithTaggedFlag("DPD", 1) // Deep-power-down mode
                     .WithReservedBits(2, 30));
@@ -865,8 +864,7 @@ namespace Antmicro.Renode.Peripherals.Analog
 
             if(hasDifferentialMode)
             {
-                var register = hasSeparateThresholdRegisters ? Registers.DifferentialMode2 : Registers.DifferentialMode;
-                registers.Add((long)register, new DoubleWordRegister(this)
+                registers.Add(GetDifferentialModeRegister(), new DoubleWordRegister(this)
                     .WithTag("DIFSEL", 0, 19)
                     .WithReservedBits(19, 13)
                 );
@@ -893,30 +891,58 @@ namespace Antmicro.Renode.Peripherals.Analog
             return registers;
         }
 
-        private void BuildWatchdogRegisters(Dictionary<long, DoubleWordRegister> registers, bool hasSeparateThresholdRegisters)
+        private long GetChannelSelectionRegister() => adcVersion switch
         {
-            Registers GetLowThresholdRegister(int i) => i switch
+            AdcVersion.V1 => (long)RegistersV1.ChannelSelection,
+            AdcVersion.V4 => (long)RegistersV4.ChannelSelection,
+            _ => throw new ConstructionException($"ADC_CHSELR does not exist in {adcVersion}")
+        };
+
+        private long GetCalibrationFactorRegister() => adcVersion switch
+        {
+            AdcVersion.V1 => (long)RegistersV1.CalibrationFactor,
+            AdcVersion.V2 => (long)RegistersV2.CalibrationFactor,
+            AdcVersion.V3 => (long)RegistersV3.CalibrationFactor,
+            AdcVersion.V4 => (long)RegistersV4.CalibrationFactor,
+            _ => throw new ConstructionException($"ADC_CALFACT does not exist in {adcVersion}")
+        };
+
+        private long GetDifferentialModeRegister() => adcVersion switch
+        {
+            AdcVersion.V2 => (long)RegistersV2.DifferentialMode,
+            AdcVersion.V3 => (long)RegistersV3.DifferentialMode,
+            _ => throw new ConstructionException($"ADC_DIFSEL does not exist in {adcVersion}")
+        };
+
+        private void BuildWatchdogRegisters(Dictionary<long, DoubleWordRegister> registers)
+        {
+            RegistersV3 GetLowerThresholdRegister(int i) => i switch
             {
-                0 => Registers.WatchdogLowThreshold1,
-                1 => Registers.WatchdogLowThreshold2,
-                2 => Registers.WatchdogLowThreshold3,
-                _ => throw new ConstructionException($"ADC_LT{i + 1} does not exist")
+                0 => RegistersV3.Watchdog1LowerThreshold,
+                1 => RegistersV3.Watchdog2LowerThreshold,
+                2 => RegistersV3.Watchdog3LowerThreshold,
+                _ => throw new ConstructionException($"ADC_LTR{i + 1} does not exist")
             };
 
-            Registers GetHighThresholdRegister(int i) => i switch
+            RegistersV3 GetHigherThresholdRegister(int i) => i switch
             {
-                0 => Registers.WatchdogHighThreshold1,
-                1 => Registers.WatchdogHighThreshold2,
-                2 => Registers.WatchdogHighThreshold3,
-                _ => throw new ConstructionException($"ADC_HT{i + 1} does not exist")
+                0 => RegistersV3.Watchdog1HigherThreshold,
+                1 => RegistersV3.Watchdog2HigherThreshold,
+                2 => RegistersV3.Watchdog3HigherThreshold,
+                _ => throw new ConstructionException($"ADC_HTR{i + 1} does not exist")
             };
 
-            // NOTE: If given implementation doesn't have channel selection, the third Watchdog Threshold will be under ChannelSelection offset
-            Registers GetThresholdRegister(int i) => i switch
+            long GetThresholdRegister(int i) => (adcVersion, i) switch
             {
-                0 => Registers.Watchdog1Threshold,
-                1 => Registers.Watchdog2Threshold,
-                2 => hasChannelSelect ? Registers.Watchdog3Threshold : Registers.ChannelSelection,
+                (AdcVersion.V1, 0) => (long)RegistersV1.Watchdog1Threshold,
+                (AdcVersion.V1, 1) => (long)RegistersV1.Watchdog2Threshold,
+                (AdcVersion.V1, 2) => (long)RegistersV1.Watchdog3Threshold,
+                (AdcVersion.V2, 0) => (long)RegistersV2.Watchdog1Threshold,
+                (AdcVersion.V2, 1) => (long)RegistersV2.Watchdog2Threshold,
+                (AdcVersion.V2, 2) => (long)RegistersV2.Watchdog3Threshold,
+                (AdcVersion.V4, 0) => (long)RegistersV4.Watchdog1Threshold,
+                (AdcVersion.V4, 1) => (long)RegistersV4.Watchdog2Threshold,
+                (AdcVersion.V4, 2) => (long)RegistersV4.Watchdog3Threshold,
                 _ => throw new ConstructionException($"ADC_TR{i + 1} does not exist")
             };
 
@@ -935,17 +961,17 @@ namespace Antmicro.Renode.Peripherals.Analog
             {
                 if(hasSeparateThresholdRegisters)
                 {
-                    registers.Add((long)GetLowThresholdRegister(i), new DoubleWordRegister(this)
+                    registers.Add((long)GetLowerThresholdRegister(i), new DoubleWordRegister(this)
                         .WithValueField(0, 26, out analogWatchdogLowValues[i], name: $"LT{i + 1}")
                         .WithReservedBits(26, 6));
 
-                    registers.Add((long)GetHighThresholdRegister(i), new DoubleWordRegister(this)
+                    registers.Add((long)GetHigherThresholdRegister(i), new DoubleWordRegister(this)
                         .WithValueField(0, 26, out analogWatchdogHighValues[i], name: $"HT{i + 1}")
                         .WithReservedBits(26, 6));
                 }
                 else
                 {
-                    registers.Add((long)GetThresholdRegister(i), new DoubleWordRegister(this)
+                    registers.Add(GetThresholdRegister(i), new DoubleWordRegister(this)
                         .WithValueField(0, 12, out analogWatchdogLowValues[i], name: $"LT{i + 1}")
                         .WithReservedBits(12, 4)
                         .WithValueField(16, 12, out analogWatchdogHighValues[i], name: $"HT{i + 1}")
@@ -1146,7 +1172,9 @@ namespace Antmicro.Renode.Peripherals.Analog
 
         private readonly IDMA dma;
         private readonly int dmaChannel;
+        private readonly AdcVersion adcVersion;
         private readonly bool hasChannelSelect;
+        private readonly bool hasSeparateThresholdRegisters;
         private readonly ResolutionRange resolutionRange;
         private readonly bool hasChannelPreselection;
         private readonly uint externalEventFrequency;
@@ -1171,6 +1199,16 @@ namespace Antmicro.Renode.Peripherals.Analog
         {
             Bits8_16,
             Bits6_12,
+        }
+
+        // Numbering is derived from CMSIS ADC_TypeDef address-compatible layouts and is not ST's ADC_VER_Vx
+        public enum AdcVersion
+        {
+            V1, // F0, L0, C0, G0, U0, WL: TR/AWD1TR@0x20, AWD2TR@0x24, CHSELR@0x28, AWD3TR@0x2C, CALFACT@0xB4
+            V2, // F3, L4, L5, WB, G4, H5, H7RS, MP13: TR1-3@0x20-0x28, SQR1-4, DIFSEL@0xB0, CALFACT@0xB4
+            V3, // H7, MP1: PCSEL, LTR1/HTR1@0x20, LTR2-3/HTR2-3@0xB0-0xBC, DIFSEL@0xC0, CALFACT@0xC4, CALFACT2@0xC8
+            V4, // WBA: V1 layout + PWRR@0x44, CALFACT@0xC4
+            V5, // U5, U3, N6, MP2, C5: AWD1-3 LTR/HTR@0xA8-0xBC, GCOMP@0x70, CALFACT@0xC4, OR@0xD0
         }
 
         private enum Resolution
@@ -1205,18 +1243,13 @@ namespace Antmicro.Renode.Peripherals.Analog
             SamplingTime           = 0x14, // ADC_SMPR/ADC_SMPR1
             SamplingTime2          = 0x18, // ADC_SMPR2
             ChannelPreselection    = 0x1C, // ADC_PCSEL
-            Watchdog1Threshold     = 0x20, // ADC_AWD1TR
-            WatchdogLowThreshold1  = 0x20, // ADC_LTR1
-            Watchdog2Threshold     = 0x24, // ADC_AWD2TR
-            WatchdogHighThreshold1 = 0x24, // ADC_HTR1
-            ChannelSelection       = 0x28, // ADC_CHSELR
-            Watchdog3Threshold     = 0x2C, // ADC_AWD3TR
+            // Gap intended
             RegularSequence1       = 0x30, // ADC_SQR1
             RegularSequence2       = 0x34, // ADC_SQR2
             RegularSequence3       = 0x38, // ADC_SQR3
             RegularSequence4       = 0x3C, // ADC_SQR4
             DataRegister           = 0x40, // ADC_DR
-            Power                  = 0x44, // ADC_PWRR
+            // Gap intended
             InjectedSequence       = 0x4C, // ADC_JSQR
             // Gap intended
             OffsetRegister1        = 0x60, // ADC_OFR1
@@ -1232,18 +1265,53 @@ namespace Antmicro.Renode.Peripherals.Analog
             Watchdog2Configuration = 0xA0, // ADC_AWD2CR
             Watchdog3Configuration = 0xA4, // ADC_AWD3CR
             // Gap intended
-            DifferentialMode       = 0xB0, // ADC_DIFSEL
-            WatchdogLowThreshold2  = 0xB0, // ADC_LTR2
-            WatchdogHighThreshold2 = 0xB4, // ADC_HTR2
-            CalibrationFactorLow   = 0xB4, // ADC_CALFACT
-            WatchdogLowThreshold3  = 0xB8, // ADC_LTR3
-            WatchdogHighThreshold3 = 0xBC, // ADC_HTR3
-            // Gap intended
-            DifferentialMode2      = 0xC0, // ADC_DIFSEL
-            CalibrationFactorHigh  = 0xC4, // ADC_CALFACT
-            CalibrationFactor2     = 0xC8, // ADC_CALFACT2
-            // Gap intended
             CommonConfiguration    = 0x308, // ADC_CCR
+        }
+
+        private enum RegistersV1
+        {
+            Watchdog1Threshold     = 0x20, // ADC_TR/ADC_AWD1TR
+            Watchdog2Threshold     = 0x24, // ADC_AWD2TR
+            ChannelSelection       = 0x28, // ADC_CHSELR
+            Watchdog3Threshold     = 0x2C, // ADC_AWD3TR
+            // Gap intended
+            CalibrationFactor      = 0xB4, // ADC_CALFACT
+        }
+
+        private enum RegistersV2
+        {
+            Watchdog1Threshold     = 0x20, // ADC_TR1
+            Watchdog2Threshold     = 0x24, // ADC_TR2
+            Watchdog3Threshold     = 0x28, // ADC_TR3
+            // Gap intended
+            DifferentialMode       = 0xB0, // ADC_DIFSEL
+            CalibrationFactor      = 0xB4, // ADC_CALFACT
+        }
+
+        private enum RegistersV3
+        {
+            Watchdog1LowerThreshold  = 0x20, // ADC_LTR1
+            Watchdog1HigherThreshold = 0x24, // ADC_HTR1
+            // Gap intended
+            Watchdog2LowerThreshold  = 0xB0, // ADC_LTR2
+            Watchdog2HigherThreshold = 0xB4, // ADC_HTR2
+            Watchdog3LowerThreshold  = 0xB8, // ADC_LTR3
+            Watchdog3HigherThreshold = 0xBC, // ADC_HTR3
+            DifferentialMode         = 0xC0, // ADC_DIFSEL
+            CalibrationFactor        = 0xC4, // ADC_CALFACT
+            CalibrationFactor2       = 0xC8, // ADC_CALFACT2
+        }
+
+        private enum RegistersV4
+        {
+            Watchdog1Threshold     = 0x20, // ADC_AWD1TR
+            Watchdog2Threshold     = 0x24, // ADC_AWD2TR
+            ChannelSelection       = 0x28, // ADC_CHSELR
+            Watchdog3Threshold     = 0x2C, // ADC_AWD3TR
+            // Gap intended
+            Power                  = 0x44, // ADC_PWRR
+            // Gap intended
+            CalibrationFactor      = 0xC4, // ADC_CALFACT
         }
     }
 }
