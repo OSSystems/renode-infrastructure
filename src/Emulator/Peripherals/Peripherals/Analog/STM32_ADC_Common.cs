@@ -851,9 +851,30 @@ namespace Antmicro.Renode.Peripherals.Analog
 
             if(hasCalibration)
             {
-                registers.Add(GetCalibrationFactorRegister(), new DoubleWordRegister(this)
-                    .WithValueField(0, 7, name: "CALFACT")
-                    .WithReservedBits(7, 25));
+                var calibrationFactor = new DoubleWordRegister(this);
+                switch(adcVersion)
+                {
+                case AdcVersion.V2:
+                    calibrationFactor
+                        .WithValueField(0, 7, name: "CALFACT_S")
+                        .WithReservedBits(7, 9)
+                        .WithValueField(16, 7, name: "CALFACT_D")
+                        .WithReservedBits(23, 9);
+                    break;
+                case AdcVersion.V3:
+                    calibrationFactor
+                        .WithValueField(0, 11, name: "CALFACT_S")
+                        .WithReservedBits(11, 5)
+                        .WithValueField(16, 11, name: "CALFACT_D")
+                        .WithReservedBits(27, 5);
+                    break;
+                default:
+                    calibrationFactor
+                        .WithValueField(0, 7, name: "CALFACT")
+                        .WithReservedBits(7, 25);
+                    break;
+                }
+                registers.Add(GetCalibrationFactorRegister(), calibrationFactor);
             }
 
             if(hasLinearityCalibration)
