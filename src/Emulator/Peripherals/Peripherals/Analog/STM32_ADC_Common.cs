@@ -27,9 +27,11 @@ namespace Antmicro.Renode.Peripherals.Analog
     // Available features:
     //     adcVersion --------- Specifies from the AdcVersion enum which register layout this ADC uses.
     //     watchdogCount ------ Specifies the number of analog watchdogs inside the peripheral between 1 and 3.
-    //    *hasCalibration ----- Specifies whether the calibration factor and voltage regulator are available to the software.
+    //    *hasCalibration ----- Specifies whether the calibration factor is available to the software.
     //                          ADCs without this feature will still have the ADCAL flag available to trigger the calibration procedure,
     //                          but not the CALFACT register.
+    //     voltageRegulator --- Specifies from the VoltageRegulator enum how the ADVREGEN field is defined.
+    //    *hasDeepPowerDown --- Specifies whether this ADC has the DEEPPWD bit. The bit is tagged but its value is not used by the model.
     //     channelCount ------- Specifies the amount of available channels.
     //                          Includes both internal sources (like the temperature sensor) as well as external.
     //    *hasPrescaler ------- Specifies whether the ADC contains a prescaler for the external clock input.
@@ -59,7 +61,7 @@ namespace Antmicro.Renode.Peripherals.Analog
     public abstract class STM32_ADC_Common : IKnownSize, IProvidesRegisterCollection<DoubleWordRegisterCollection>, IDoubleWordPeripheral, IWordPeripheral, IADC
     {
         public STM32_ADC_Common(IMachine machine, double referenceVoltage, uint externalEventFrequency, int dmaChannel, IDMA dmaPeripheral,
-            AdcVersion adcVersion, int watchdogCount, bool hasCalibration, int channelCount, bool hasPrescaler,
+            AdcVersion adcVersion, int watchdogCount, bool hasCalibration, VoltageRegulator voltageRegulator, bool hasDeepPowerDown, int channelCount, bool hasPrescaler,
             bool hasVbatPin, bool hasChannelSequence,
             bool hasOffset, bool hasDifferentialMode, SamplingTime samplingTime, bool dualMode, bool hasLinearityCalibration, bool hasChannelInjection, ResolutionRange resolutionRange, bool hasChannelPreselection, bool hasScanDirection)
         {
@@ -98,8 +100,14 @@ namespace Antmicro.Renode.Peripherals.Analog
             {
                 throw new ConstructionException("Invalid watchdog count");
             }
+            if(voltageRegulator == VoltageRegulator.TwoBit && hasDeepPowerDown)
+            {
+                throw new ConstructionException("Two bit ADVREGEN overlaps DEEPPWD");
+            }
+            this.voltageRegulator = voltageRegulator;
 
             registers = new DoubleWordRegisterCollection(this, BuildRegistersMap(hasCalibration,
+                                                                                 hasDeepPowerDown,
                                                                                  hasPrescaler,
                                                                                  hasVbatPin,
                                                                                  hasChannelSequence,
@@ -456,7 +464,7 @@ namespace Antmicro.Renode.Peripherals.Analog
             return referencedValue;
         }
 
-        private Dictionary<long, DoubleWordRegister> BuildRegistersMap(bool hasCalibration, bool hasPrescaler, bool hasVbatPin, bool hasChannelSequence, bool hasOffset, bool hasDifferentialMode, SamplingTime samplingTime, bool dualMode, bool hasLinearityCalibration, bool hasChannelInjection, bool hasScanDirection)
+        private Dictionary<long, DoubleWordRegister> BuildRegistersMap(bool hasCalibration, bool hasDeepPowerDown, bool hasPrescaler, bool hasVbatPin, bool hasChannelSequence, bool hasOffset, bool hasDifferentialMode, SamplingTime samplingTime, bool dualMode, bool hasLinearityCalibration, bool hasChannelInjection, bool hasScanDirection)
         {
             var hasPowerRegister = adcVersion == AdcVersion.V4;
 
@@ -495,7 +503,7 @@ namespace Antmicro.Renode.Peripherals.Analog
                 isrRegister
                     .WithTaggedFlag("EOCAL", 11)
                     // Simplified logic - hardware delays LDORDY until voltage regulator settles.
-                    .WithFlag(12, valueProviderCallback: _ => adcRegulatorEnable.Value, name: "LDORDY");
+                    .WithFlag(12, valueProviderCallback: _ => IsRegulatorEnabled(), name: "LDORDY");
                 interruptEnableRegister
                     .WithTaggedFlag("EOCALIE", 11)
                     .WithTaggedFlag("LDORDYIE", 12);
@@ -670,7 +678,8 @@ namespace Antmicro.Renode.Peripherals.Analog
                     .WithReservedBits(24, 1);
             }
 
-            var controlRegister = new DoubleWordRegister(this)
+            // DEEPPWD and the two bit ADVREGEN both reset to 1 at bit 29
+            var controlRegister = new DoubleWordRegister(this, hasDeepPowerDown || voltageRegulator == VoltageRegulator.TwoBit ? 0x20000000u : 0x0u)
                     .WithFlag(0, valueProviderCallback: _ => enabled, writeCallback: (_, val) =>
                         {
                             if(val)
@@ -706,9 +715,36 @@ namespace Antmicro.Renode.Peripherals.Analog
                                 sequenceInProgress = false;
                             }
                         }, name: "ADSTP")
-                    .WithFlag(28, out adcRegulatorEnable, name: "ADVREGEN")
-                    .WithReservedBits(29, 2)
+                    .WithReservedBits(30, 1)
                     .WithTaggedFlag("ADCAL", 31);
+
+            switch(voltageRegulator)
+            {
+            case VoltageRegulator.OneBit:
+                controlRegister
+                    .WithFlag(28, out adcRegulatorEnable, name: "ADVREGEN");
+                break;
+            case VoltageRegulator.TwoBit:
+                // 0b10: disabled, 0b00: intermediate, 0b01: enabled
+                controlRegister
+                    .WithValueField(28, 2, out adcRegulatorState, name: "ADVREGEN");
+                break;
+            default:
+                controlRegister
+                    .WithReservedBits(28, 1);
+                break;
+            }
+
+            if(hasDeepPowerDown)
+            {
+                controlRegister
+                    .WithFlag(29, name: "DEEPPWD"); // no actual logic, but software expects to read the value back
+            }
+            else if(voltageRegulator != VoltageRegulator.TwoBit)
+            {
+                controlRegister
+                    .WithReservedBits(29, 1);
+            }
 
             if(hasLinearityCalibration)
             {
@@ -888,6 +924,13 @@ namespace Antmicro.Renode.Peripherals.Analog
 
             return registers;
         }
+
+        private bool IsRegulatorEnabled() => voltageRegulator switch
+        {
+            VoltageRegulator.OneBit => adcRegulatorEnable.Value,
+            VoltageRegulator.TwoBit => adcRegulatorState.Value == 0b01,
+            _ => true
+        };
 
         private long GetChannelSelectionRegister() => adcVersion switch
         {
@@ -1131,6 +1174,7 @@ namespace Antmicro.Renode.Peripherals.Analog
         private IFlagRegisterField[] analogWatchdogFlags;
         private IFlagRegisterField adcReadyFlag;
         private IFlagRegisterField adcRegulatorEnable;
+        private IValueRegisterField adcRegulatorState;
 
         private IFlagRegisterField adcOverrunFlag;
         private IFlagRegisterField overrunMode;
@@ -1171,6 +1215,7 @@ namespace Antmicro.Renode.Peripherals.Analog
         private readonly IDMA dma;
         private readonly int dmaChannel;
         private readonly AdcVersion adcVersion;
+        private readonly VoltageRegulator voltageRegulator;
         private readonly bool hasChannelSelect;
         private readonly bool hasSeparateThresholdRegisters;
         private readonly ResolutionRange resolutionRange;
@@ -1197,6 +1242,13 @@ namespace Antmicro.Renode.Peripherals.Analog
         {
             Bits8_16,
             Bits6_12,
+        }
+
+        public enum VoltageRegulator
+        {
+            None,   // F0, N6, MP2
+            OneBit, // L0, G0, C0, U0, WL, WBA, L4, L5, G4, H5, H7, U5, U3, C5
+            TwoBit, // F3: 0b10 disabled, 0b00 intermediate, 0b01 enabled
         }
 
         // Numbering is derived from CMSIS ADC_TypeDef address-compatible layouts and is not ST's ADC_VER_Vx
