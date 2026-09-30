@@ -98,10 +98,6 @@ namespace Antmicro.Renode.Peripherals.Analog
             {
                 throw new ConstructionException("Invalid watchdog count");
             }
-            if(hasSeparateThresholdRegisters && watchdogCount == 0)
-            {
-                throw new ConstructionException("Invalid Watchdog configuration");
-            }
 
             registers = new DoubleWordRegisterCollection(this, BuildRegistersMap(hasCalibration,
                                                                                  hasPrescaler,
