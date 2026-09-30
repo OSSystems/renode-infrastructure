@@ -481,7 +481,7 @@ namespace Antmicro.Renode.Peripherals.Analog
                             machine.LocalTimeSource.ExecuteInNearestSyncedState((___) => SampleNextChannel());
                         }
                     }, name: "EOC")
-                .WithFlag(3, out endOfSequenceFlag, FieldMode.Read | FieldMode.WriteOneToClear, name: "EOSEQ")
+                .WithFlag(3, out endOfSequenceFlag, FieldMode.Read | FieldMode.WriteOneToClear, name: "EOS")
                 .WithFlag(4, out adcOverrunFlag, FieldMode.Read | FieldMode.WriteOneToClear, name: "OVR")
                 .WithFlags(7, WatchdogCount, out analogWatchdogFlags, FieldMode.Read | FieldMode.WriteOneToClear, name: "AWD")
                 .WithReservedBits(7 + WatchdogCount, 3 - WatchdogCount)
@@ -492,7 +492,7 @@ namespace Antmicro.Renode.Peripherals.Analog
                 .WithFlag(0, out adcReadyInterruptEnable, name: "ADRDYIE")
                 .WithFlag(1, out endOfSamplingInterruptEnable, name: "EOSMPIE")
                 .WithFlag(2, out endOfConversionInterruptEnable, name: "EOCIE")
-                .WithFlag(3, out endOfSequenceInterruptEnable, name: "EOSEQIE")
+                .WithFlag(3, out endOfSequenceInterruptEnable, name: "EOSIE")
                 .WithFlag(4, out adcOverrunInterruptEnable, name: "OVRIE")
                 .WithFlags(7, WatchdogCount, out analogWatchdogsInterruptEnable, name: "AWDIE")
                 .WithReservedBits(7 + WatchdogCount, 3 - WatchdogCount)
