@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2010-2026 Antmicro
+// Copyright (c) 2026 OS Systems
 //
 // This file is licensed under the MIT License.
 // Full license text is available in 'licenses/MIT.txt'.
@@ -28,7 +29,7 @@ namespace Antmicro.Renode.Peripherals.Analog
                 hasVbatPin: false,
                 hasChannelSelect: false,
                 hasChannelSequence: true,
-                hasPowerRegister: true,
+                hasPowerRegister: false,
                 hasOffset: true,
                 hasDifferentialMode: true,
                 samplingTime: SamplingTime.PerChannel,
