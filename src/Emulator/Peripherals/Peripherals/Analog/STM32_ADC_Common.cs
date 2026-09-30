@@ -33,6 +33,7 @@ namespace Antmicro.Renode.Peripherals.Analog
     //     voltageRegulator --- Specifies from the VoltageRegulator enum how the ADVREGEN field is defined.
     //    *hasDeepPowerDown --- Specifies whether this ADC has the DEEPPWD bit. The bit is tagged but its value is not used by the model.
     //    *hasLowFrequencyMode  Specifies whether this ADC has the LFMEN bit. The bit is tagged but its value is not used by the model.
+    //     hasConfiguration2 -- Specifies whether this ADC has the ADC_CFGR2 register.
     //    *hasOversampler ----- Specifies whether this ADC has the V1/V4 oversampler bits in ADC_CFGR2. These bits are stored but not used by the model.
     //    *hasLowFrequencyTrigger Specifies whether this ADC has the LFTRIG bit in ADC_CFGR2. The bit is stored but not used by the model.
     //     channelCount ------- Specifies the amount of available channels.
@@ -64,7 +65,7 @@ namespace Antmicro.Renode.Peripherals.Analog
     public abstract class STM32_ADC_Common : IKnownSize, IProvidesRegisterCollection<DoubleWordRegisterCollection>, IDoubleWordPeripheral, IWordPeripheral, IADC
     {
         public STM32_ADC_Common(IMachine machine, double referenceVoltage, uint externalEventFrequency, int dmaChannel, IDMA dmaPeripheral,
-            AdcVersion adcVersion, int watchdogCount, bool hasCalibration, VoltageRegulator voltageRegulator, bool hasDeepPowerDown, bool hasLowFrequencyMode, bool hasOversampler, bool hasLowFrequencyTrigger, int channelCount, bool hasPrescaler,
+            AdcVersion adcVersion, int watchdogCount, bool hasCalibration, VoltageRegulator voltageRegulator, bool hasDeepPowerDown, bool hasLowFrequencyMode, bool hasConfiguration2, bool hasOversampler, bool hasLowFrequencyTrigger, int channelCount, bool hasPrescaler,
             bool hasVbatPin, bool hasChannelSequence,
             bool hasOffset, bool hasDifferentialMode, SamplingTime samplingTime, bool dualMode, bool hasLinearityCalibration, bool hasChannelInjection, ResolutionRange resolutionRange, bool hasChannelPreselection, bool hasScanDirection)
         {
@@ -107,6 +108,10 @@ namespace Antmicro.Renode.Peripherals.Analog
             {
                 throw new ConstructionException("Two bit ADVREGEN overlaps DEEPPWD");
             }
+            if(!hasConfiguration2 && adcVersion != AdcVersion.V2)
+            {
+                throw new ConstructionException($"ADC_CFGR2 is always present on {adcVersion}");
+            }
             if(hasOversampler && adcVersion != AdcVersion.V1 && adcVersion != AdcVersion.V4)
             {
                 throw new ConstructionException($"Oversampler is not supported on {adcVersion}");
@@ -121,6 +126,7 @@ namespace Antmicro.Renode.Peripherals.Analog
             registers = new DoubleWordRegisterCollection(this, BuildRegistersMap(hasCalibration,
                                                                                  hasDeepPowerDown,
                                                                                  hasLowFrequencyMode,
+                                                                                 hasConfiguration2,
                                                                                  hasOversampler,
                                                                                  hasLowFrequencyTrigger,
                                                                                  hasPrescaler,
@@ -482,7 +488,7 @@ namespace Antmicro.Renode.Peripherals.Analog
             return referencedValue;
         }
 
-        private Dictionary<long, DoubleWordRegister> BuildRegistersMap(bool hasCalibration, bool hasDeepPowerDown, bool hasLowFrequencyMode, bool hasOversampler, bool hasLowFrequencyTrigger, bool hasPrescaler, bool hasVbatPin, bool hasChannelSequence, bool hasOffset, bool hasDifferentialMode, SamplingTime samplingTime, bool dualMode, bool hasLinearityCalibration, bool hasChannelInjection, bool hasScanDirection)
+        private Dictionary<long, DoubleWordRegister> BuildRegistersMap(bool hasCalibration, bool hasDeepPowerDown, bool hasLowFrequencyMode, bool hasConfiguration2, bool hasOversampler, bool hasLowFrequencyTrigger, bool hasPrescaler, bool hasVbatPin, bool hasChannelSequence, bool hasOffset, bool hasDifferentialMode, SamplingTime samplingTime, bool dualMode, bool hasLinearityCalibration, bool hasChannelInjection, bool hasScanDirection)
         {
             var hasPowerRegister = adcVersion == AdcVersion.V4;
 
@@ -923,7 +929,6 @@ namespace Antmicro.Renode.Peripherals.Analog
                 {(long)Registers.InterruptEnable, interruptEnableRegister},
                 {(long)Registers.Control, controlRegister},
                 {(long)Registers.Configuration1, configurationRegister1},
-                {(long)Registers.Configuration2, configurationRegister2},
                 {(long)Registers.DataRegister, dataRegister},
                 {(long)Registers.CommonConfiguration, commonConfigurationRegister},
             };
@@ -936,6 +941,11 @@ namespace Antmicro.Renode.Peripherals.Analog
             BuildSampingTimeRegisters(registers, samplingTime);
 
             // Optional registers
+            if(hasConfiguration2)
+            {
+                registers.Add((long)Registers.Configuration2, configurationRegister2);
+            }
+
             if(hasChannelSelect)
             {
                 registers.Add(GetChannelSelectionRegister(), new DoubleWordRegister(this)
