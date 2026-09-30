@@ -498,22 +498,35 @@ namespace Antmicro.Renode.Peripherals.Analog
                 .WithReservedBits(13, 19)
                 .WithWriteCallback((_, __) => UpdateInterrupts());
 
-            if(hasCalibration)
+            if(hasCalibration && (adcVersion == AdcVersion.V1 || adcVersion == AdcVersion.V4))
             {
                 isrRegister
-                    .WithTaggedFlag("EOCAL", 11)
+                    .WithTaggedFlag("EOCAL", 11);
+                interruptEnableRegister
+                    .WithTaggedFlag("EOCALIE", 11);
+            }
+            else
+            {
+                isrRegister
+                    .WithReservedBits(11, 1);
+                interruptEnableRegister
+                    .WithReservedBits(11, 1);
+            }
+
+            if(voltageRegulator != VoltageRegulator.None && (adcVersion == AdcVersion.V3 || adcVersion == AdcVersion.V4 || adcVersion == AdcVersion.V5))
+            {
+                isrRegister
                     // Simplified logic - hardware delays LDORDY until voltage regulator settles.
                     .WithFlag(12, valueProviderCallback: _ => IsRegulatorEnabled(), name: "LDORDY");
                 interruptEnableRegister
-                    .WithTaggedFlag("EOCALIE", 11)
                     .WithTaggedFlag("LDORDYIE", 12);
             }
             else
             {
                 isrRegister
-                    .WithReservedBits(11, 2);
+                    .WithReservedBits(12, 1);
                 interruptEnableRegister
-                    .WithReservedBits(11, 2);
+                    .WithReservedBits(12, 1);
             }
 
             if(hasChannelInjection)
