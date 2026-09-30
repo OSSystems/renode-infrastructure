@@ -23,7 +23,7 @@ namespace Antmicro.Renode.Peripherals.Analog
                 // Base class configuration
                 adcVersion: AdcVersion.V2,
                 watchdogCount: 3,
-                hasCalibration: false,
+                hasCalibration: true,
                 voltageRegulator: VoltageRegulator.OneBit,
                 hasDeepPowerDown: true,
                 channelCount: 19,
