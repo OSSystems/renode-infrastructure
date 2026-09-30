@@ -222,7 +222,7 @@ namespace Antmicro.Renode.Peripherals.Analog
 
         private void WarnOnCurrentChannelNotPreselected()
         {
-            if(hasChannelPreselection && !preselectedChannels[currentChannel].Value)
+            if(hasChannelPreselection && IsChannelValid(currentChannel) && !preselectedChannels[currentChannel].Value)
             {
                 this.Log(LogLevel.Warning, "Channel {0} is not preselected", currentChannel);
             }
@@ -325,8 +325,13 @@ namespace Antmicro.Renode.Peripherals.Analog
                 var enabledOnCurrent = enabledOnAll || (int)analogWatchdogChannel.Value == currentChannel;
                 return analogWatchdogEnable.Value && enabledOnCurrent;
             default:
-                return analogWatchdogSelectedChannels[watchdogNumber][currentChannel].Value;
+                return IsChannelValid(currentChannel) && analogWatchdogSelectedChannels[watchdogNumber][currentChannel].Value;
             }
+        }
+
+        private bool IsChannelValid(int channel)
+        {
+            return channel >= 0 && channel < ADCChannelCount;
         }
 
         private ulong ClampSample(uint sample, int width)
@@ -357,6 +362,10 @@ namespace Antmicro.Renode.Peripherals.Analog
 
             if(sequenceInProgress)
             {
+                if(!IsChannelValid(currentChannel))
+                {
+                    this.Log(LogLevel.Warning, "Channel {0} does not exist, available channels: 0-{1}", currentChannel, ADCChannelCount - 1);
+                }
                 uint sample = GetSampleFromChannel(currentChannel);
                 WarnOnTooBigValue(currentChannel, (double)sample / 1e3); // µV to mV
                 if(!adcOverrunFlag.Value || overrunMode.Value)
