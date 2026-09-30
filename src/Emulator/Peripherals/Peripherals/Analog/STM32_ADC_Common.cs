@@ -34,6 +34,7 @@ namespace Antmicro.Renode.Peripherals.Analog
     //    *hasDeepPowerDown --- Specifies whether this ADC has the DEEPPWD bit. The bit is tagged but its value is not used by the model.
     //    *hasLowFrequencyMode  Specifies whether this ADC has the LFMEN bit. The bit is tagged but its value is not used by the model.
     //    *hasOversampler ----- Specifies whether this ADC has the V1/V4 oversampler bits in ADC_CFGR2. These bits are stored but not used by the model.
+    //    *hasLowFrequencyTrigger Specifies whether this ADC has the LFTRIG bit in ADC_CFGR2. The bit is stored but not used by the model.
     //     channelCount ------- Specifies the amount of available channels.
     //                          Includes both internal sources (like the temperature sensor) as well as external.
     //    *hasPrescaler ------- Specifies whether the ADC contains a prescaler for the external clock input.
@@ -63,7 +64,7 @@ namespace Antmicro.Renode.Peripherals.Analog
     public abstract class STM32_ADC_Common : IKnownSize, IProvidesRegisterCollection<DoubleWordRegisterCollection>, IDoubleWordPeripheral, IWordPeripheral, IADC
     {
         public STM32_ADC_Common(IMachine machine, double referenceVoltage, uint externalEventFrequency, int dmaChannel, IDMA dmaPeripheral,
-            AdcVersion adcVersion, int watchdogCount, bool hasCalibration, VoltageRegulator voltageRegulator, bool hasDeepPowerDown, bool hasLowFrequencyMode, bool hasOversampler, int channelCount, bool hasPrescaler,
+            AdcVersion adcVersion, int watchdogCount, bool hasCalibration, VoltageRegulator voltageRegulator, bool hasDeepPowerDown, bool hasLowFrequencyMode, bool hasOversampler, bool hasLowFrequencyTrigger, int channelCount, bool hasPrescaler,
             bool hasVbatPin, bool hasChannelSequence,
             bool hasOffset, bool hasDifferentialMode, SamplingTime samplingTime, bool dualMode, bool hasLinearityCalibration, bool hasChannelInjection, ResolutionRange resolutionRange, bool hasChannelPreselection, bool hasScanDirection)
         {
@@ -110,6 +111,10 @@ namespace Antmicro.Renode.Peripherals.Analog
             {
                 throw new ConstructionException($"Oversampler is not supported on {adcVersion}");
             }
+            if(hasLowFrequencyTrigger && adcVersion != AdcVersion.V1 && adcVersion != AdcVersion.V4)
+            {
+                throw new ConstructionException($"LFTRIG is not supported on {adcVersion}");
+            }
             this.voltageRegulator = voltageRegulator;
             hasEndOfCalibration = hasCalibration && (adcVersion == AdcVersion.V1 || adcVersion == AdcVersion.V4);
 
@@ -117,6 +122,7 @@ namespace Antmicro.Renode.Peripherals.Analog
                                                                                  hasDeepPowerDown,
                                                                                  hasLowFrequencyMode,
                                                                                  hasOversampler,
+                                                                                 hasLowFrequencyTrigger,
                                                                                  hasPrescaler,
                                                                                  hasVbatPin,
                                                                                  hasChannelSequence,
@@ -476,7 +482,7 @@ namespace Antmicro.Renode.Peripherals.Analog
             return referencedValue;
         }
 
-        private Dictionary<long, DoubleWordRegister> BuildRegistersMap(bool hasCalibration, bool hasDeepPowerDown, bool hasLowFrequencyMode, bool hasOversampler, bool hasPrescaler, bool hasVbatPin, bool hasChannelSequence, bool hasOffset, bool hasDifferentialMode, SamplingTime samplingTime, bool dualMode, bool hasLinearityCalibration, bool hasChannelInjection, bool hasScanDirection)
+        private Dictionary<long, DoubleWordRegister> BuildRegistersMap(bool hasCalibration, bool hasDeepPowerDown, bool hasLowFrequencyMode, bool hasOversampler, bool hasLowFrequencyTrigger, bool hasPrescaler, bool hasVbatPin, bool hasChannelSequence, bool hasOffset, bool hasDifferentialMode, SamplingTime samplingTime, bool dualMode, bool hasLinearityCalibration, bool hasChannelInjection, bool hasScanDirection)
         {
             var hasPowerRegister = adcVersion == AdcVersion.V4;
 
@@ -686,8 +692,19 @@ namespace Antmicro.Renode.Peripherals.Analog
             }
 
             var configurationRegister2 = new DoubleWordRegister(this)
-                .WithReservedBits(10, 20)
+                .WithReservedBits(10, 19)
                 .WithTag("CKMODE", 30, 2);
+
+            if(hasLowFrequencyTrigger)
+            {
+                configurationRegister2
+                    .WithFlag(29, name: "LFTRIG");
+            }
+            else
+            {
+                configurationRegister2
+                    .WithReservedBits(29, 1);
+            }
 
             if(hasOversampler)
             {

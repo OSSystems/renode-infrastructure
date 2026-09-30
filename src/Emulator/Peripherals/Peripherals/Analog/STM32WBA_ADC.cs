@@ -28,6 +28,7 @@ namespace Antmicro.Renode.Peripherals.Analog
                 hasDeepPowerDown: false,
                 hasLowFrequencyMode: false,
                 hasOversampler: true,
+                hasLowFrequencyTrigger: true,
                 channelCount: 14,
                 hasPrescaler: true,
                 hasVbatPin: false,
